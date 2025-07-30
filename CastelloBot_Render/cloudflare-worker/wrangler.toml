@@ -1,0 +1,11 @@
+name = "castello-wake"
+type = "javascript"
+account_id = "25c4c6dced12e1e8f0413a617ec1ba19"
+workers_dev = true
+compatibility_date = "2025-07-29"
+
+[triggers]
+cron = ["*/5 * * * *"]
+
+[observability]
+logs = true
