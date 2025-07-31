@@ -68,8 +68,13 @@ class LanguageManager:
             "menu_description": {
                 "ru": "Выберите действие из меню ниже:",
                 "ua": "Виберіть дію з меню нижче:"
-            },
+            }
         }
 
     def get_text(self, key: str, lang: str) -> str:
+        """
+        Возвращает текст по ключу и языку,
+        если нет — возвращает русский текст,
+        если и его нет — предупреждение.
+        """
         return self.texts.get(key, {}).get(lang, self.texts.get(key, {}).get("ru", "⚠️ Текст не найден."))
