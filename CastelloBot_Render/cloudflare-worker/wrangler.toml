@@ -5,7 +5,7 @@ workers_dev = true
 compatibility_date = "2025-07-29"
 
 [triggers]
-cron = ["*/5 * * * *"]
+cron = ["*/7 * * * *"]
 
 [observability]
 logs = true
