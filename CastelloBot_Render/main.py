@@ -41,16 +41,12 @@ class LanguageView(discord.ui.View):
         await db.set_user_language(interaction.user.id, "ru")
         if not interaction.response.is_done():
             await interaction.response.send_message(lang_manager.get_text("language_set_ru", "ru"), ephemeral=True)
-        else:
-            await interaction.followup.send(lang_manager.get_text("language_set_ru", "ru"), ephemeral=True)
 
     @discord.ui.button(label="Українська", style=discord.ButtonStyle.secondary, emoji="🇺🇦")
     async def set_ua(self, interaction: discord.Interaction, button: discord.ui.Button):
         await db.set_user_language(interaction.user.id, "ua")
         if not interaction.response.is_done():
             await interaction.response.send_message(lang_manager.get_text("language_set_ua", "ua"), ephemeral=True)
-        else:
-            await interaction.followup.send(lang_manager.get_text("language_set_ua", "ua"), ephemeral=True)
 
 @bot.event
 async def on_ready():
@@ -64,21 +60,14 @@ async def on_ready():
 @bot.tree.command(name="addcontract", description="➕ Добавить контракт")
 @app_commands.describe(name="Название контракта", amount="Сумма контракта")
 async def add_contract(interaction: discord.Interaction, name: str, amount: float):
+    await interaction.response.defer(ephemeral=True)  # Отложенный ответ
     lang = await db.get_user_language(interaction.user.id)
     if amount <= 0:
-        text = lang_manager.get_text("invalid_amount", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
         return
 
     if len(name.strip()) == 0:
-        text = lang_manager.get_text("contract_not_found", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
         return
 
     contract = {
@@ -92,92 +81,68 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
     }
 
     await db.add_contract(contract)
-    text = lang_manager.get_text("contract_added", lang).format(name=contract["name"], amount=amount)
-    if not interaction.response.is_done():
-        await interaction.response.send_message(text)
-    else:
-        await interaction.followup.send(text)
+    await interaction.followup.send(
+        lang_manager.get_text("contract_added", lang).format(name=contract["name"], amount=amount),
+        ephemeral=True
+    )
 
 @bot.tree.command(name="editcontract", description="✏️ Редактировать контракт")
 @app_commands.describe(name="Название контракта", amount="Новая сумма")
 async def edit_contract(interaction: discord.Interaction, name: str, amount: float):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
     contract = await db.get_contract_by_name(name)
 
     if not contract or contract.get("is_archived", False):
-        text = lang_manager.get_text("contract_not_found", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
         return
 
     if contract.get("author_id") != interaction.user.id:
-        text = lang_manager.get_text("no_permission", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
 
     if amount <= 0:
-        text = lang_manager.get_text("invalid_amount", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
         return
 
     contract["amount"] = amount
     await db.update_contract(contract)
 
-    text = lang_manager.get_text("contract_updated_success", lang).format(name=contract["name"], amount=amount)
-    if not interaction.response.is_done():
-        await interaction.response.send_message(text)
-    else:
-        await interaction.followup.send(text)
+    await interaction.followup.send(
+        lang_manager.get_text("contract_updated_success", lang).format(name=contract["name"], amount=amount),
+        ephemeral=True
+    )
 
 @bot.tree.command(name="deletecontract", description="❌ Удалить контракт")
 @app_commands.describe(name="Название контракта")
 async def delete_contract(interaction: discord.Interaction, name: str):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
     contract = await db.get_contract_by_name(name)
 
     if not contract or contract.get("is_archived", False):
-        text = lang_manager.get_text("contract_not_found", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
         return
 
     if contract.get("author_id") != interaction.user.id and not is_admin_or_role(interaction.user):
-        text = lang_manager.get_text("no_permission", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
 
     await db.delete_contract_by_name(name)
-    text = lang_manager.get_text("contract_deleted_success", lang).format(name=name)
-    if not interaction.response.is_done():
-        await interaction.response.send_message(text)
-    else:
-        await interaction.followup.send(text)
+    await interaction.followup.send(
+        lang_manager.get_text("contract_deleted_success", lang).format(name=name),
+        ephemeral=True
+    )
 
 @bot.tree.command(name="report", description="📄 Отчёт по контракту")
 async def report(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
     contracts = await db.get_all_contracts()
     contracts = [c for c in contracts if not c.get("is_archived", False)]
 
     if not contracts:
-        text = lang_manager.get_text("no_contracts_found", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
         return
 
     options = [
@@ -232,23 +197,20 @@ async def report(interaction: discord.Interaction):
             selected = select.values[0]
             contract = await db.get_contract_by_name(selected)
             if not contract:
-                text = lang_manager.get_text("contract_not_found", lang)
                 if not select_interaction.response.is_done():
-                    await select_interaction.response.send_message(text, ephemeral=True)
+                    await select_interaction.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
                 else:
-                    await select_interaction.followup.send(text, ephemeral=True)
+                    await select_interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
                 return
 
             await select_interaction.response.send_modal(ParticipantModal(contract))
 
-    if not interaction.response.is_done():
-        await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=ReportView(), ephemeral=True)
-    else:
-        await interaction.followup.send(lang_manager.get_text("select_contract", lang), view=ReportView(), ephemeral=True)
+    await interaction.followup.send(lang_manager.get_text("select_contract", lang), view=ReportView(), ephemeral=True)
 
 @bot.tree.command(name="reportdays", description="📊 Отчёт за N дней")
 @app_commands.describe(days="Сколько дней учитывать (максимум 30)")
 async def report_days(interaction: discord.Interaction, days: int):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
 
     if days > Config.MAX_REPORT_DAYS:
@@ -270,11 +232,7 @@ async def report_days(interaction: discord.Interaction, days: int):
             continue
 
     if not recent:
-        text = lang_manager.get_text("no_contracts_found", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
         return
 
     total = sum(c["amount"] for c in recent)
@@ -298,21 +256,15 @@ async def report_days(interaction: discord.Interaction, days: int):
         earnings=earnings_lines
     )
 
-    if not interaction.response.is_done():
-        await interaction.response.send_message(text, ephemeral=True)
-    else:
-        await interaction.followup.send(text, ephemeral=True)
+    await interaction.followup.send(text, ephemeral=True)
 
 @bot.tree.command(name="reportlog", description="📜 Просмотр всех сохранённых отчётов")
 async def report_log(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
     reports = await db.get_all_reports()
     if not reports:
-        text = lang_manager.get_text("no_contracts_found", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.followup.send(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
         return
 
     lines = []
@@ -320,22 +272,16 @@ async def report_log(interaction: discord.Interaction):
         time_str = r.get("timestamp", "")[:19].replace("T", " ")
         lines.append(f"**{r.get('contract_name')}** ({time_str})\nАвтор: <@{r.get('author_id')}>\n{r.get('message')}\n")
 
-    text = "\n\n".join(lines)
-    if not interaction.response.is_done():
-        await interaction.response.send_message(text, ephemeral=True)
-    else:
-        await interaction.followup.send(text, ephemeral=True)
+    await interaction.followup.send("\n\n".join(lines), ephemeral=True)
 
 @bot.tree.command(name="backup", description="💾 Выгрузка всех данных JSON (только для админов)")
 async def backup(interaction: discord.Interaction):
     if not is_admin_or_role(interaction.user):
         lang = await db.get_user_language(interaction.user.id)
-        text = lang_manager.get_text("no_permission", lang)
-        if not interaction.response.is_done():
-            await interaction.response.send_message(text, ephemeral=True)
-        else:
-            await interaction.followup.send(text, ephemeral=True)
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
+
+    await interaction.response.defer(ephemeral=True)
 
     contracts = await db.get_all_contracts()
     reports = await db.get_all_reports()
@@ -350,15 +296,12 @@ async def backup(interaction: discord.Interaction):
     # Отправляем файл через in-memory буфер
     fp = io.StringIO(json_str)
     fp.seek(0)
-    if not interaction.response.is_done():
-        await interaction.response.send_message("Резервная копия данных:", ephemeral=True)
-        await interaction.followup.send(file=discord.File(fp, filename="backup.json"))
-    else:
-        await interaction.followup.send("Резервная копия данных:", ephemeral=True)
-        await interaction.followup.send(file=discord.File(fp, filename="backup.json"))
+    await interaction.followup.send("Резервная копия данных:", ephemeral=True)
+    await interaction.followup.send(file=discord.File(fp, filename="backup.json"))
 
 @bot.tree.command(name="language", description="🌐 Сменить язык")
 async def language(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
     view = LanguageView()
     embed = discord.Embed(
@@ -366,13 +309,11 @@ async def language(interaction: discord.Interaction):
         description="Русский\n🇺🇦 Українська",
         color=0x2b2d31
     )
-    if not interaction.response.is_done():
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
-    else:
-        await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+    await interaction.followup.send(embed=embed, view=view, ephemeral=True)
 
 @bot.tree.command(name="menu", description="📋 Главное меню")
 async def menu(interaction: discord.Interaction):
+    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
     embed = discord.Embed(
         title=lang_manager.get_text("menu_title", lang),
@@ -396,10 +337,7 @@ async def menu(interaction: discord.Interaction):
               "`/language` — Сменить язык",
         inline=False
     )
-    if not interaction.response.is_done():
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-    else:
-        await interaction.followup.send(embed=embed, ephemeral=True)
+    await interaction.followup.send(embed=embed, ephemeral=True)
 
 # Flask для UptimeRobot и Cloudflare
 app = Flask('')
@@ -421,5 +359,10 @@ def keep_alive():
 
 if __name__ == "__main__":
     keep_alive()
-    token = os.getenv("DISCORD_BOT_TOKEN")
+
+    token = Config.DISCORD_BOT_TOKEN
+    if not token:
+        print("❌ DISCORD_BOT_TOKEN не установлен.")
+        exit(1)
+
     bot.run(token)
