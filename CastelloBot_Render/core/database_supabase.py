@@ -1,67 +1,119 @@
-from supabase import create_client, Client
-from datetime import datetime
-import json
+import asyncio
+from supabase import create_client
 
 class DatabaseManager:
-    def __init__(self, url: str = None, key: str = None):
-        from config import Config
-        self.supabase: Client = create_client(url or Config.SUPABASE_URL, key or Config.SUPABASE_ANON_KEY)
+    def __init__(self, supabase_url: str, supabase_key: str):
+        self.supabase = create_client(supabase_url, supabase_key)
 
-    # === ЯЗЫК ПОЛЬЗОВАТЕЛЯ ===
+    # Добавить контракт
+    async def add_contract(self, contract: dict):
+        loop = asyncio.get_running_loop()
+        def insert_contract():
+            res = self.supabase.table("contracts").upsert(contract).execute()
+            if res.error:
+                print(f"Ошибка добавления контракта: {res.error}")
+        await loop.run_in_executor(None, insert_contract)
 
-    def get_user_language(self, user_id: int) -> str:
-        res = self.supabase.table("users").select("language").eq("user_id", user_id).execute()
-        data = res.data
-        if data:
-            return data[0]["language"]
-        return "ru"
+    # Получить контракт по имени
+    async def get_contract_by_name(self, name: str) -> dict | None:
+        loop = asyncio.get_running_loop()
+        def query_contract():
+            res = self.supabase.table("contracts").select("*").eq("name", name).execute()
+            if res.error:
+                print(f"Ошибка получения контракта: {res.error}")
+                return None
+            if res.data:
+                return res.data[0]
+            return None
+        return await loop.run_in_executor(None, query_contract)
 
-    def set_user_language(self, user_id: int, lang: str):
-        exists = self.supabase.table("users").select("*").eq("user_id", user_id).execute().data
-        if exists:
-            self.supabase.table("users").update({"language": lang}).eq("user_id", user_id).execute()
-        else:
-            self.supabase.table("users").insert({"user_id": user_id, "language": lang}).execute()
+    # Получить все контракты
+    async def get_all_contracts(self) -> list:
+        loop = asyncio.get_running_loop()
+        def query_all():
+            res = self.supabase.table("contracts").select("*").execute()
+            if res.error:
+                print(f"Ошибка получения всех контрактов: {res.error}")
+                return []
+            return res.data
+        return await loop.run_in_executor(None, query_all)
 
-    # === КОНТРАКТЫ ===
+    # Обновить контракт
+    async def update_contract(self, contract: dict):
+        loop = asyncio.get_running_loop()
+        def update():
+            res = self.supabase.table("contracts").update(contract).eq("name", contract["name"]).execute()
+            if res.error:
+                print(f"Ошибка обновления контракта: {res.error}")
+        await loop.run_in_executor(None, update)
 
-    def add_contract(self, contract: dict):
-        if self.get_contract_by_name(contract["name"]):
-            self.update_contract(contract)
-            return
-        contract = contract.copy()
-        contract["participants"] = json.dumps(contract.get("participants", []))
-        self.supabase.table("contracts").insert(contract).execute()
+    # Удалить контракт по имени
+    async def delete_contract_by_name(self, name: str):
+        loop = asyncio.get_running_loop()
+        def delete():
+            res = self.supabase.table("contracts").delete().eq("name", name).execute()
+            if res.error:
+                print(f"Ошибка удаления контракта: {res.error}")
+        await loop.run_in_executor(None, delete)
 
-    def get_contract_by_name(self, name: str) -> dict | None:
-        res = self.supabase.table("contracts").select("*").eq("name", name).execute()
-        data = res.data
-        if data:
-            contract = data[0]
-            contract["participants"] = json.loads(contract.get("participants", "[]"))
-            return contract
-        return None
+    # Установить язык пользователя
+    async def set_user_language(self, user_id: int, lang: str):
+        loop = asyncio.get_running_loop()
+        def upsert_language():
+            data = {"user_id": user_id, "language": lang}
+            res = self.supabase.table("users").upsert(data).execute()
+            if res.error:
+                print(f"Ошибка установки языка: {res.error}")
+        await loop.run_in_executor(None, upsert_language)
 
-    def get_all_contracts(self) -> list[dict]:
-        res = self.supabase.table("contracts").select("*").execute()
-        contracts = res.data or []
-        for c in contracts:
-            c["participants"] = json.loads(c.get("participants", "[]"))
-        return contracts
+    # Получить язык пользователя
+    async def get_user_language(self, user_id: int) -> str:
+        loop = asyncio.get_running_loop()
+        def query_language():
+            res = self.supabase.table("users").select("language").eq("user_id", user_id).execute()
+            if res.error:
+                print(f"Ошибка получения языка: {res.error}")
+                return None
+            if res.data and len(res.data) > 0:
+                return res.data[0]["language"]
+            return "ru"
+        return await loop.run_in_executor(None, query_language)
 
-    def update_contract(self, contract: dict):
-        updated = contract.copy()
-        updated["participants"] = json.dumps(contract.get("participants", []))
-        self.supabase.table("contracts").update(updated).eq("name", contract["name"]).execute()
+    # Сохранить отчёт
+    async def save_report(
+        self,
+        contract_name: str,
+        amount: float,
+        participants: list[str],
+        leader: str,
+        fund: float,
+        per_user: float,
+        message: str,
+    ):
+        loop = asyncio.get_running_loop()
+        def insert_report():
+            data = {
+                "contract_name": contract_name,
+                "amount": amount,
+                "participants": "\n".join(participants),
+                "leader": leader,
+                "fund": fund,
+                "per_user": per_user,
+                "message": message,
+            }
+            res = self.supabase.table("reports").insert(data).execute()
+            if res.error:
+                print(f"Ошибка сохранения отчёта: {res.error}")
+        await loop.run_in_executor(None, insert_report)
 
-    def delete_contract_by_name(self, name: str):
-        self.supabase.table("contracts").delete().eq("name", name).execute()
+    # Получить все отчёты
+    async def get_all_reports(self) -> list:
+        loop = asyncio.get_running_loop()
+        def query_reports():
+            res = self.supabase.table("reports").select("*").order("created_at", desc=True).execute()
+            if res.error:
+                print(f"Ошибка получения отчётов: {res.error}")
+                return []
+            return res.data
+        return await loop.run_in_executor(None, query_reports)
 
-    # === ОТЧЁТЫ ===
-
-    def add_report(self, report: dict):
-        self.supabase.table("reports").insert(report).execute()
-
-    def get_all_reports(self) -> list[dict]:
-        res = self.supabase.table("reports").select("*").execute()
-        return res.data or []
