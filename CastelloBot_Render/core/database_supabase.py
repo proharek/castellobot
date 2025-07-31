@@ -10,8 +10,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def insert_contract():
             res = self.supabase.table("contracts").upsert(contract).execute()
-            if res.error:
-                print(f"Ошибка добавления контракта: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка добавления контракта: {res.status_code}")
         await loop.run_in_executor(None, insert_contract)
 
     # Получить контракт по имени
@@ -19,8 +19,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def query_contract():
             res = self.supabase.table("contracts").select("*").eq("name", name).execute()
-            if res.error:
-                print(f"Ошибка получения контракта: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка получения контракта: {res.status_code}")
                 return None
             if res.data:
                 return res.data[0]
@@ -32,8 +32,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def query_all():
             res = self.supabase.table("contracts").select("*").execute()
-            if res.error:
-                print(f"Ошибка получения всех контрактов: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка получения всех контрактов: {res.status_code}")
                 return []
             return res.data
         return await loop.run_in_executor(None, query_all)
@@ -43,8 +43,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def update():
             res = self.supabase.table("contracts").update(contract).eq("name", contract["name"]).execute()
-            if res.error:
-                print(f"Ошибка обновления контракта: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка обновления контракта: {res.status_code}")
         await loop.run_in_executor(None, update)
 
     # Удалить контракт по имени
@@ -52,8 +52,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def delete():
             res = self.supabase.table("contracts").delete().eq("name", name).execute()
-            if res.error:
-                print(f"Ошибка удаления контракта: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка удаления контракта: {res.status_code}")
         await loop.run_in_executor(None, delete)
 
     # Установить язык пользователя
@@ -62,8 +62,8 @@ class DatabaseManager:
         def upsert_language():
             data = {"user_id": user_id, "language": lang}
             res = self.supabase.table("users").upsert(data).execute()
-            if res.error:
-                print(f"Ошибка установки языка: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка установки языка: {res.status_code}")
         await loop.run_in_executor(None, upsert_language)
 
     # Получить язык пользователя
@@ -71,8 +71,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def query_language():
             res = self.supabase.table("users").select("language").eq("user_id", user_id).execute()
-            if res.error:
-                print(f"Ошибка получения языка: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка получения языка: {res.status_code}")
                 return None
             if res.data and len(res.data) > 0:
                 return res.data[0]["language"]
@@ -102,8 +102,8 @@ class DatabaseManager:
                 "message": message,
             }
             res = self.supabase.table("reports").insert(data).execute()
-            if res.error:
-                print(f"Ошибка сохранения отчёта: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка сохранения отчёта: {res.status_code}")
         await loop.run_in_executor(None, insert_report)
 
     # Получить все отчёты
@@ -111,9 +111,8 @@ class DatabaseManager:
         loop = asyncio.get_running_loop()
         def query_reports():
             res = self.supabase.table("reports").select("*").order("created_at", desc=True).execute()
-            if res.error:
-                print(f"Ошибка получения отчётов: {res.error}")
+            if res.status_code >= 400:
+                print(f"Ошибка получения отчётов: {res.status_code}")
                 return []
             return res.data
         return await loop.run_in_executor(None, query_reports)
-
