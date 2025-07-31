@@ -5,8 +5,9 @@ from discord import app_commands
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta, timezone
+import io
 
-from core.database import DatabaseManager
+from core.database_supabase import DatabaseManager
 from core.language import LanguageManager
 from config import Config
 
@@ -16,6 +17,19 @@ bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
 
 db = DatabaseManager()
 lang_manager = LanguageManager()
+
+def is_admin(user: discord.User):
+    admin_ids = Config.get_admin_user_ids()
+    return user.id in admin_ids
+
+def is_admin_or_role(member: discord.Member):
+    if is_admin(member):
+        return True
+    admin_role_ids = Config.get_admin_role_ids()
+    for role in member.roles:
+        if role.id in admin_role_ids:
+            return True
+    return False
 
 class LanguageView(discord.ui.View):
     def __init__(self):
@@ -42,7 +56,6 @@ async def on_ready():
     except Exception as e:
         print(f"Ошибка синхронизации: {e}")
 
-# --- Команды бота ---
 @bot.tree.command(name="addcontract", description="➕ Добавить контракт")
 @app_commands.describe(name="Название контракта", amount="Сумма контракта")
 async def add_contract(interaction: discord.Interaction, name: str, amount: float):
@@ -51,18 +64,23 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
         await interaction.response.send_message(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
         return
 
+    if len(name.strip()) == 0:
+        await interaction.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
+        return
+
     contract = {
-        "name": name,
+        "name": name.strip(),
         "amount": amount,
         "author_id": interaction.user.id,
         "author_name": interaction.user.display_name,
-        "participants": [],
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "participants": [f"<@{interaction.user.id}>"],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "is_archived": False
     }
 
     db.add_contract(contract)
     await interaction.response.send_message(
-        lang_manager.get_text("contract_added", lang).format(name=name, amount=amount)
+        lang_manager.get_text("contract_added", lang).format(name=contract["name"], amount=amount)
     )
 
 @bot.tree.command(name="editcontract", description="✏️ Редактировать контракт")
@@ -71,7 +89,7 @@ async def edit_contract(interaction: discord.Interaction, name: str, amount: flo
     lang = db.get_user_language(interaction.user.id)
     contract = db.get_contract_by_name(name)
 
-    if not contract:
+    if not contract or contract.get("is_archived", False):
         await interaction.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
         return
 
@@ -79,11 +97,15 @@ async def edit_contract(interaction: discord.Interaction, name: str, amount: flo
         await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
 
+    if amount <= 0:
+        await interaction.response.send_message(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
+        return
+
     contract["amount"] = amount
     db.update_contract(contract)
 
     await interaction.response.send_message(
-        lang_manager.get_text("contract_updated_success", lang).format(name=name, amount=amount)
+        lang_manager.get_text("contract_updated_success", lang).format(name=contract["name"], amount=amount)
     )
 
 @bot.tree.command(name="deletecontract", description="❌ Удалить контракт")
@@ -92,11 +114,11 @@ async def delete_contract(interaction: discord.Interaction, name: str):
     lang = db.get_user_language(interaction.user.id)
     contract = db.get_contract_by_name(name)
 
-    if not contract:
+    if not contract or contract.get("is_archived", False):
         await interaction.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
         return
 
-    if contract.get("author_id") != interaction.user.id:
+    if contract.get("author_id") != interaction.user.id and not is_admin_or_role(interaction.user):
         await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
 
@@ -116,7 +138,7 @@ async def report(interaction: discord.Interaction):
 
     options = [
         discord.SelectOption(label=c["name"], description=f'{c["amount"]} USD')
-        for c in contracts
+        for c in contracts if not c.get("is_archived", False)
     ]
 
     class ParticipantModal(discord.ui.Modal, title="✏️ Изменить участников"):
@@ -126,20 +148,20 @@ async def report(interaction: discord.Interaction):
             self.input = discord.ui.TextInput(
                 label="Участники (по одному в строке)",
                 style=discord.TextStyle.paragraph,
-                default="\n".join(contract.get("participants", []) or [contract["author_name"]])
+                default="\n".join(contract.get("participants", []) or [f"<@{contract['author_id']}>"])
             )
             self.add_item(self.input)
 
         async def on_submit(self, modal_interaction: discord.Interaction):
             participants = [line.strip() for line in self.input.value.split("\n") if line.strip()]
             if not participants:
-                participants = [self.contract["author_name"]]
+                participants = [f"<@{self.contract['author_id']}>"]
             self.contract["participants"] = participants
             db.update_contract(self.contract)
 
             fund = self.contract["amount"] * Config.FUND_PERCENTAGE
             per_user = round((self.contract["amount"] - fund) / len(participants), 2)
-            lines = "\n".join(f"• @{p}" for p in participants)
+            lines = "\n".join(f"• {p}" for p in participants)
 
             report_text = lang_manager.get_text("report_template", lang).format(
                 name=self.contract["name"],
@@ -176,47 +198,43 @@ async def report(interaction: discord.Interaction):
 
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=ReportView(), ephemeral=True)
 
-@bot.tree.command(name="reportdays", description="📊 Отчёт за N дней")
-@app_commands.describe(days="Сколько дней учитывать")
-async def report_days(interaction: discord.Interaction, days: int):
+@bot.tree.command(name="reportlog", description="📜 Просмотр всех сохранённых отчётов")
+async def report_log(interaction: discord.Interaction):
     lang = db.get_user_language(interaction.user.id)
-    now = datetime.now(timezone.utc)
-    threshold = now - timedelta(days=days)
-    contracts = db.get_all_contracts()
-
-    recent = []
-    for c in contracts:
-        try:
-            c_time = datetime.fromisoformat(c.get("timestamp", "2000-01-01T00:00:00+00:00"))
-            if c_time >= threshold:
-                recent.append(c)
-        except Exception:
-            continue
-
-    if not recent:
+    reports = db.get_all_reports()
+    if not reports:
         await interaction.response.send_message(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
         return
 
-    total = sum(c["amount"] for c in recent)
-    fund = total * Config.FUND_PERCENTAGE
-    user_totals = {}
+    lines = []
+    for r in reports[-10:]:  # Последние 10 отчётов
+        time_str = r.get("timestamp", "")[:19].replace("T", " ")
+        lines.append(f"**{r.get('contract_name')}** ({time_str})\nАвтор: <@{r.get('author_id')}>\n{r.get('report_text')}\n")
 
-    for contract in recent:
-        amount = contract["amount"]
-        participants = contract.get("participants", []) or [contract["author_name"]]
-        per = round((amount - amount * Config.FUND_PERCENTAGE) / len(participants), 2)
-        for p in participants:
-            user_totals[p] = user_totals.get(p, 0) + per
+    await interaction.response.send_message("\n\n".join(lines), ephemeral=True)
 
-    lines = [f"📊 Отчёт за последние {days} дней:",
-             f"💰 Общая сумма контрактов: {total:,.0f} USD",
-             f"🏦 В фонд семьи: {fund:,.0f} USD (50%)",
-             f"💸 Выплачено участникам всего: {total - fund:,.0f} USD",
-             f"👥 Доход по участникам:"]
-    for user, earned in sorted(user_totals.items(), key=lambda x: -x[1]):
-        lines.append(f"• @{user} — {earned:,.0f} USD")
+@bot.tree.command(name="backup", description="💾 Выгрузка всех данных JSON (только для админов)")
+async def backup(interaction: discord.Interaction):
+    if not is_admin_or_role(interaction.user):
+        lang = db.get_user_language(interaction.user.id)
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
+        return
 
-    await interaction.response.send_message("\n".join(lines))
+    contracts = db.get_all_contracts(include_archived=True)
+    reports = db.get_all_reports()
+
+    import json
+    backup_data = {
+        "contracts": contracts,
+        "reports": reports
+    }
+    json_str = json.dumps(backup_data, indent=2, ensure_ascii=False)
+
+    # Отправляем файл через in-memory буфер
+    fp = io.StringIO(json_str)
+    fp.seek(0)
+    await interaction.response.send_message("Резервная копия данных:", ephemeral=True)
+    await interaction.followup.send(file=discord.File(fp, filename="backup.json"))
 
 @bot.tree.command(name="language", description="🌐 Сменить язык")
 async def language(interaction: discord.Interaction):
@@ -243,7 +261,8 @@ async def menu(interaction: discord.Interaction):
               "`/editcontract` — ✏️ Редактировать контракт\n"
               "`/deletecontract` — ❌ Удалить контракт\n"
               "`/report` — 📄 Отчёт по контракту\n"
-              "`/reportdays` — 📊 Отчёт за N дней",
+              "`/reportlog` — 📜 Сохранённые отчёты\n"
+              "`/backup` — 💾 Резервное копирование (админы)",
         inline=False
     )
     embed.add_field(
@@ -254,11 +273,7 @@ async def menu(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# --- Flask для UptimeRobot и Cloudflare ---
-
-from flask import Flask
-from threading import Thread
-
+# Flask для UptimeRobot и Cloudflare
 app = Flask('')
 
 @app.route('/')
@@ -271,12 +286,10 @@ def healthz():
     return "OK", 200
 
 def run():
-    app.run(host='0.0.0.0', port=8080)
+    app.run(host=Config.HOST, port=Config.PORT)
 
 def keep_alive():
     Thread(target=run).start()
-
-# --- Запуск бота и Flask параллельно ---
 
 if __name__ == "__main__":
     keep_alive()
