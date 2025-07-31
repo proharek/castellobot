@@ -1,80 +1,50 @@
-class LanguageManager:
-    def __init__(self):
-        self.texts = {
-            "language_set_ru": {
-                "ru": "Язык установлен: Русский",
-                "ua": "Мова встановлена: Російська"
-            },
-            "language_set_ua": {
-                "ru": "Язык установлен: Украинский 🇺🇦",
-                "ua": "Мова встановлена: Українська 🇺🇦"
-            },
-            "contract_added": {
-                "ru": "Контракт «{name}» на сумму {amount} USD успешно добавлен.",
-                "ua": "Контракт «{name}» на суму {amount} USD успішно додано."
-            },
-            "invalid_amount": {
-                "ru": "❌ Укажи сумму больше нуля.",
-                "ua": "❌ Вкажи суму більше нуля."
-            },
-            "contract_not_found": {
-                "ru": "❌ Контракт не найден.",
-                "ua": "❌ Контракт не знайдено."
-            },
-            "no_permission": {
-                "ru": "❌ У тебя нет прав на это действие.",
-                "ua": "❌ У тебе немає прав на цю дію."
-            },
-            "contract_updated_success": {
-                "ru": "Контракт «{name}» обновлён. Новая сумма: {amount} USD.",
-                "ua": "Контракт «{name}» оновлено. Нова сума: {amount} USD."
-            },
-            "contract_deleted_success": {
-                "ru": "Контракт «{name}» удалён.",
-                "ua": "Контракт «{name}» видалено."
-            },
-            "select_contract": {
-                "ru": "Выбери контракт для отчёта:",
-                "ua": "Вибери контракт для звіту:"
-            },
-            "no_contracts_found": {
-                "ru": "❌ Контракты не найдены.",
-                "ua": "❌ Контракти не знайдено."
-            },
-            "report_template": {
-                "ru": (
-                    "💰 Сумма контракта: {amount} USD\n"
-                    "👤 Старший группы: @{leader}\n"
-                    "👥 Участники:\n{participants}\n"
-                    "🏦 В фонд семьи: {fund} USD (50%)\n"
-                    "💸 Каждому участнику: {per_user} USD"
-                ),
-                "ua": (
-                    "💰 Сума контракту: {amount} USD\n"
-                    "👤 Старший групи: @{leader}\n"
-                    "👥 Учасники:\n{participants}\n"
-                    "🏦 У сімейний фонд: {fund} USD (50%)\n"
-                    "💸 Кожному учаснику: {per_user} USD"
-                )
-            },
-            "select_language": {
-                "ru": "Выберите язык интерфейса:",
-                "ua": "Виберіть мову інтерфейсу:"
-            },
-            "menu_title": {
-                "ru": "📋 Главное меню",
-                "ua": "📋 Головне меню"
-            },
-            "menu_description": {
-                "ru": "Выберите действие из меню ниже:",
-                "ua": "Виберіть дію з меню нижче:"
-            }
-        }
+from discord import Interaction, Embed, ButtonStyle
+from discord.ui import View, button
+from discord.ext import commands
+from core.database_supabase import set_user_language, get_user_language
+from core.language import LanguageManager
 
-    def get_text(self, key: str, lang: str) -> str:
-        """
-        Возвращает текст по ключу и языку,
-        если нет — возвращает русский текст,
-        если и его нет — предупреждение.
-        """
-        return self.texts.get(key, {}).get(lang, self.texts.get(key, {}).get("ru", "⚠️ Текст не найден."))
+lang_manager = LanguageManager()
+
+class LanguageView(View):
+    def __init__(self, user_id: int, lang: str):
+        super().__init__(timeout=60)
+        self.user_id = user_id
+        self.lang = lang
+
+    @button(label="Русский", style=ButtonStyle.primary)
+    async def set_ru(self, interaction: Interaction, button):
+        await set_user_language(self.user_id, "ru")
+        try:
+            await interaction.response.edit_message(
+                content=lang_manager.get_text("language_set_ru", "ru"), view=None
+            )
+        except discord.errors.NotFound:
+            pass
+
+    @button(label="Українська 🇺🇦", style=ButtonStyle.secondary)
+    async def set_ua(self, interaction: Interaction, button):
+        await set_user_language(self.user_id, "ua")
+        try:
+            await interaction.response.edit_message(
+                content=lang_manager.get_text("language_set_ua", "ua"), view=None
+            )
+        except discord.errors.NotFound:
+            pass
+
+@bot.tree.command(name="language", description="Сменить язык интерфейса")
+async def language(interaction: Interaction):
+    user_id = interaction.user.id
+    lang = await get_user_language(user_id) or "ru"
+
+    embed = Embed(
+        title=lang_manager.get_text("select_language", lang),
+        color=0x2b2d31
+    )
+
+    try:
+        await interaction.response.send_message(embed=embed, view=LanguageView(user_id, lang), ephemeral=True)
+    except discord.errors.NotFound:
+        pass
+
+
