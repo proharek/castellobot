@@ -46,7 +46,11 @@ async def get_user_lang(user_id: int) -> str:
 
 @tree.command(name="menu")
 async def menu(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     lang = await get_user_lang(interaction.user.id)
     lang_obj = Language(lang)
     text = lang_obj.lang('menu_text')
@@ -65,8 +69,11 @@ async def menu(interaction: discord.Interaction):
 
 @tree.command(name="report")
 async def report(interaction: discord.Interaction):
-    # Очень важно: defer вызывается сразу при входе в команду!
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     try:
         contracts = await get_all_contracts()
         if not contracts:
@@ -95,8 +102,8 @@ async def report(interaction: discord.Interaction):
                 if not participants:
                     participants = [author_id]
 
-                guild = interaction.guild
-                members = [guild.get_member(pid) for pid in participants]
+                guild = select_interaction.guild
+                members = [guild.get_member(pid) for pid in participants] if guild else []
                 members_mentions = [m.mention if m else f"User ID {pid}" for m, pid in zip(members, participants)]
 
                 fund = total * 0.5
@@ -117,11 +124,18 @@ async def report(interaction: discord.Interaction):
         await interaction.followup.send("Выберите контракт для отчёта:", view=view, ephemeral=True)
 
     except Exception as e:
-        await interaction.followup.send(f"Произошла ошибка: {e}", ephemeral=True)
+        try:
+            await interaction.followup.send(f"Произошла ошибка: {e}", ephemeral=True)
+        except Exception:
+            print(f"Ошибка при отправке ошибки: {e}")
 
 @tree.command(name="language")
 async def language(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     lang = await get_user_lang(interaction.user.id)
     lang_obj = Language(lang)
 
@@ -140,7 +154,11 @@ async def language(interaction: discord.Interaction):
 
 @tree.command(name="addcontract")
 async def addcontract(interaction: discord.Interaction, *, args: str = None):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     lang = await get_user_lang(interaction.user.id)
     lang_obj = Language(lang)
 
@@ -173,7 +191,11 @@ async def addcontract(interaction: discord.Interaction, *, args: str = None):
 
 @tree.command(name="editcontract")
 async def editcontract(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     lang = await get_user_lang(interaction.user.id)
     lang_obj = Language(lang)
 
@@ -236,7 +258,11 @@ async def editcontract(interaction: discord.Interaction):
 @tree.command(name="deletecontract")
 @commands.has_permissions(administrator=True)
 async def deletecontract(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     lang = await get_user_lang(interaction.user.id)
     lang_obj = Language(lang)
 
@@ -264,7 +290,11 @@ async def deletecontract(interaction: discord.Interaction):
 
 @tree.command(name="info")
 async def info(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
+    try:
+        await interaction.response.defer(ephemeral=True)
+    except (discord.errors.NotFound, discord.errors.InteractionResponded):
+        pass
+
     lang = await get_user_lang(interaction.user.id)
     lang_obj = Language(lang)
 
@@ -277,3 +307,4 @@ async def on_ready():
     await bot.tree.sync()
 
 bot.run(DISCORD_TOKEN)
+
