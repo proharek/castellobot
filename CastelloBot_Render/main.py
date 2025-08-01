@@ -1,11 +1,12 @@
 import os
+import io
 import discord
+import asyncio
 from discord.ext import commands
 from discord import app_commands
 from flask import Flask
 from threading import Thread
 from datetime import datetime, timedelta, timezone
-import io
 
 from core.database_supabase import DatabaseManager
 from core.language import LanguageManager
@@ -18,13 +19,24 @@ bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
 db = DatabaseManager(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_ANON_KEY"))
 lang_manager = LanguageManager()
 
-def is_admin(user: discord.User):
+def is_admin(user: discord.User) -> bool:
     return user.id in Config.get_admin_user_ids()
 
-def is_admin_or_role(member: discord.Member):
-    if is_admin(member):
-        return True
-    return any(role.id in Config.get_admin_role_ids() for role in member.roles)
+def is_admin_or_role(member: discord.Member) -> bool:
+    return is_admin(member) or any(role.id in Config.get_admin_role_ids() for role in member.roles)
+
+# Flask сервер для пинга
+app = Flask('')
+
+@app.route('/')
+def home():
+    return "✅ Bot is alive!"
+
+def run():
+    app.run(host=Config.HOST, port=Config.PORT)
+
+def keep_alive():
+    Thread(target=run).start()
 
 class LanguageView(discord.ui.View):
     def __init__(self):
@@ -33,43 +45,38 @@ class LanguageView(discord.ui.View):
     @discord.ui.button(label="Русский", style=discord.ButtonStyle.secondary)
     async def set_ru(self, interaction: discord.Interaction, button: discord.ui.Button):
         await db.set_user_language(interaction.user.id, "ru")
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(lang_manager.get_text("language_set_ru", "ru"), ephemeral=True)
-            else:
-                await interaction.followup.send(lang_manager.get_text("language_set_ru", "ru"), ephemeral=True)
-        except discord.HTTPException:
-            pass
+        await safe_reply(interaction, lang_manager.get_text("language_set_ru", "ru"))
 
     @discord.ui.button(label="Українська", style=discord.ButtonStyle.secondary, emoji="🇺🇦")
     async def set_ua(self, interaction: discord.Interaction, button: discord.ui.Button):
         await db.set_user_language(interaction.user.id, "ua")
-        try:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(lang_manager.get_text("language_set_ua", "ua"), ephemeral=True)
-            else:
-                await interaction.followup.send(lang_manager.get_text("language_set_ua", "ua"), ephemeral=True)
-        except discord.HTTPException:
-            pass
+        await safe_reply(interaction, lang_manager.get_text("language_set_ua", "ua"))
 
+async def safe_reply(interaction: discord.Interaction, message: str):
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.send_message(message, ephemeral=True)
+        else:
+            await interaction.followup.send(message, ephemeral=True)
+    except discord.HTTPException:
+        pass
 @bot.event
 async def on_ready():
-    print(f"✅ Бот {bot.user} запущен.")
     try:
         synced = await bot.tree.sync()
-        print(f"✅ Синхронизировано {len(synced)} команд.")
+        print(f"✅ Бот {bot.user} запущен. Синхронизировано {len(synced)} команд.")
     except Exception as e:
-        print(f"❌ Ошибка синхронизации команд: {e}")
+        print(f"❌ Ошибка синхронизации: {e}")
 
 @bot.tree.command(name="language", description="🌐 Сменить язык")
 async def language(interaction: discord.Interaction):
     lang = await db.get_user_language(interaction.user.id)
-    view = LanguageView()
     embed = discord.Embed(
         title=lang_manager.get_text("select_language", lang),
-        description="Русский\n🇺🇦 Українська",
+        description="🇷🇺 Русский\n🇺🇦 Українська",
         color=0x2b2d31
     )
+    view = LanguageView()
     try:
         if not interaction.response.is_done():
             await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
@@ -88,19 +95,13 @@ async def menu(interaction: discord.Interaction):
     )
     embed.add_field(
         name="📂 Контракты",
-        value="`/addcontract` — ➕ Добавить контракт\n"
-              "`/editcontract` — ✏️ Редактировать контракт\n"
-              "`/deletecontract` — ❌ Удалить контракт\n"
-              "`/report` — 📄 Отчёт по контракту\n"
-              "`/reportdays` — 📊 Отчёт за N дней\n"
-              "`/reportlog` — 📜 Сохранённые отчёты\n"
-              "`/backup` — 💾 Резервное копирование (админы)",
+        value="`/addcontract`, `/editcontract`, `/deletecontract`\n"
+              "`/report`, `/reportdays`, `/reportlog`, `/backup`",
         inline=False
     )
     embed.add_field(
         name="⚙️ Система",
-        value="`/menu` — Главное меню\n"
-              "`/language` — Сменить язык",
+        value="`/menu`, `/language`",
         inline=False
     )
     try:
@@ -111,187 +112,193 @@ async def menu(interaction: discord.Interaction):
     except discord.HTTPException:
         pass
 
-# Команда добавления контракта
 @bot.tree.command(name="addcontract", description="➕ Добавить контракт")
-@app_commands.describe(name="Название контракта", amount="Сумма контракта")
-async def add_contract(interaction: discord.Interaction, name: str, amount: float):
-    await interaction.response.defer(ephemeral=True)
+@app_commands.describe(name="Название контракта", amount="Сумма в USD")
+async def addcontract(interaction: discord.Interaction, name: str, amount: float):
     lang = await db.get_user_language(interaction.user.id)
-
     if amount <= 0:
-        await interaction.followup.send(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
-        return
-    if len(name.strip()) == 0:
-        await interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
+        await safe_reply(interaction, lang_manager.get_text("invalid_amount", lang))
         return
 
-    contract = {
-        "name": name.strip(),
-        "amount": amount,
-        "author_id": interaction.user.id,
-        "author_name": interaction.user.display_name,
-        "participants": [f"<@{interaction.user.id}>"],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "is_archived": False
-    }
-
-    await db.add_contract(contract)
-    await interaction.followup.send(lang_manager.get_text("contract_added", lang).format(name=contract["name"], amount=amount), ephemeral=True)
-
-# Команда редактирования контракта
-@bot.tree.command(name="editcontract", description="✏️ Редактировать контракт")
-@app_commands.describe(name="Название контракта", amount="Новая сумма")
-async def edit_contract(interaction: discord.Interaction, name: str, amount: float):
-    await interaction.response.defer(ephemeral=True)
-    lang = await db.get_user_language(interaction.user.id)
-
-    contract = await db.get_contract_by_name(name)
-    if not contract or contract.get("is_archived", False):
-        await interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
-        return
-    if contract.get("author_id") != interaction.user.id:
-        await interaction.followup.send(lang_manager.get_text("no_permission", lang), ephemeral=True)
-        return
-    if amount <= 0:
-        await interaction.followup.send(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
-        return
-
-    contract["amount"] = amount
-    await db.update_contract(contract)
-
-    await interaction.followup.send(lang_manager.get_text("contract_updated_success", lang).format(name=contract["name"], amount=amount), ephemeral=True)
-
-# Команда удаления контракта
-@bot.tree.command(name="deletecontract", description="❌ Удалить контракт")
-@app_commands.describe(name="Название контракта")
-async def delete_contract(interaction: discord.Interaction, name: str):
-    await interaction.response.defer(ephemeral=True)
-    lang = await db.get_user_language(interaction.user.id)
-
-    contract = await db.get_contract_by_name(name)
-    if not contract or contract.get("is_archived", False):
-        await interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
-        return
-    # Удалять может только автор или админ/роль
-    if contract.get("author_id") != interaction.user.id and not is_admin_or_role(interaction.user):
-        await interaction.followup.send(lang_manager.get_text("no_permission", lang), ephemeral=True)
-        return
-
-    await db.delete_contract_by_name(name)
-    await interaction.followup.send(lang_manager.get_text("contract_deleted_success", lang).format(name=name), ephemeral=True)
-
-# Команда отчёта по контракту (с выбором контракта)
+    await db.add_contract(name=name, amount=amount, author_id=interaction.user.id)
+    await safe_reply(interaction, lang_manager.get_text("contract_added", lang).format(name=name, amount=amount))
+# ----------------- Команда: /report -----------------
 @bot.tree.command(name="report", description="📄 Отчёт по контракту")
 async def report(interaction: discord.Interaction):
-    await interaction.response.defer(ephemeral=True)
     lang = await db.get_user_language(interaction.user.id)
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        else:
+            await interaction.followup.defer(ephemeral=True)
+    except discord.HTTPException:
+        pass
 
     contracts = await db.get_all_contracts()
-    contracts = [c for c in contracts if not c.get("is_archived", False)]
-
     if not contracts:
         await interaction.followup.send(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
         return
 
-    options = [
-        discord.SelectOption(label=c["name"], description=f'{c["amount"]} USD')
-        for c in contracts
-    ]
+    class ContractSelect(discord.ui.Select):
+        def __init__(self):
+            options = [
+                discord.SelectOption(label=c["name"], value=c["name"]) for c in contracts
+            ]
+            super().__init__(placeholder=lang_manager.get_text("select_contract", lang), min_values=1, max_values=1, options=options)
 
-    class ParticipantModal(discord.ui.Modal, title="✏️ Изменить участников"):
-        def __init__(self, contract):
-            super().__init__(timeout=300)
-            self.contract = contract
-            self.input = discord.ui.TextInput(
-                label="Участники (по одному в строке)",
-                style=discord.TextStyle.paragraph,
-                default="\n".join(contract.get("participants", []) or [f"<@{contract['author_id']}>"])
-            )
-            self.add_item(self.input)
-
-        async def on_submit(self, modal_interaction: discord.Interaction):
-            participants = [line.strip() for line in self.input.value.split("\n") if line.strip()]
-            if not participants:
-                participants = [f"<@{self.contract['author_id']}>"]
-            self.contract["participants"] = participants
-            await db.update_contract(self.contract)
-
-            fund = self.contract["amount"] * Config.FUND_PERCENTAGE
-            per_user = round((self.contract["amount"] - fund) / len(participants), 2)
-            lines = "\n".join(f"• {p}" for p in participants)
-
-            report_text = lang_manager.get_text("report_template", lang).format(
-                name=self.contract["name"],
-                amount=f"{self.contract['amount']:,.2f}",
-                leader=self.contract["author_name"],
-                participants=lines,
-                fund=f"{fund:,.2f}",
-                per_user=f"{per_user:,.2f}"
-            )
-            try:
-                if not modal_interaction.response.is_done():
-                    await modal_interaction.response.send_message(report_text)
-                else:
-                    await modal_interaction.followup.send(report_text)
-            except discord.HTTPException:
-                pass
-
-    class ReportView(discord.ui.View):
-        @discord.ui.select(
-            placeholder="Выберите контракт",
-            options=options,
-            min_values=1,
-            max_values=1
-        )
-        async def select(self, select_interaction: discord.Interaction, select: discord.ui.Select):
-            selected = select.values[0]
+        async def callback(self, select_interaction: discord.Interaction):
+            selected = self.values[0]
             contract = await db.get_contract_by_name(selected)
             if not contract:
-                try:
-                    if not select_interaction.response.is_done():
-                        await select_interaction.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
-                    else:
-                        await select_interaction.followup.send(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
-                except discord.HTTPException:
-                    pass
+                await select_interaction.response.send_message(
+                    lang_manager.get_text("contract_not_found", lang), ephemeral=True
+                )
                 return
 
-            try:
-                await select_interaction.response.send_modal(ParticipantModal(contract))
-            except discord.HTTPException:
-                pass
+            participants = contract.get("participants", []) or []
+            if not participants:
+                participants = [contract["author_id"]]
+
+            fund = round(contract["amount"] * 0.5, 2)
+            per_user = round((contract["amount"] - fund) / len(participants), 2)
+            formatted_users = "\n".join([f"• <@{uid}>" for uid in participants])
+
+            text = lang_manager.get_text("report_template", lang).format(
+                amount=contract["amount"],
+                leader=contract["author_id"],
+                participants=formatted_users,
+                fund=f"{fund:.2f}",
+                per_user=f"{per_user:.2f}"
+            )
+
+            await select_interaction.response.send_message(text, ephemeral=True)
+
+    view = discord.ui.View(timeout=120)
+    view.add_item(ContractSelect())
+
+    await interaction.followup.send(view=view, ephemeral=True)
+# ----------------- Команда: /reportdays -----------------
+@bot.tree.command(name="reportdays", description="📊 Отчёт за N дней")
+@app_commands.describe(days="Количество дней")
+async def reportdays(interaction: discord.Interaction, days: int):
+    lang = await db.get_user_language(interaction.user.id)
 
     try:
-        await interaction.followup.send(lang_manager.get_text("select_contract", lang), view=ReportView(), ephemeral=True)
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        else:
+            await interaction.followup.defer(ephemeral=True)
     except discord.HTTPException:
         pass
 
-# Flask для UptimeRobot и Cloudflare
-app = Flask('')
+    contracts = await db.get_all_contracts()
+    now = datetime.now(timezone.utc)
+    filtered = [c for c in contracts if "timestamp" in c and datetime.fromisoformat(c["timestamp"]) > now - timedelta(days=days)]
 
-@app.route('/')
-def home():
-    print("✅ Flask получил пинг от Cloudflare")
-    return "Bot is alive!"
+    if not filtered:
+        await interaction.followup.send(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
+        return
 
-@app.route('/healthz')
-def healthz():
-    return "OK", 200
+    total_amount = 0
+    user_earnings = {}
 
-def run():
-    app.run(host=Config.HOST, port=Config.PORT)
+    for c in filtered:
+        participants = c.get("participants", []) or [c["author_id"]]
+        fund = round(c["amount"] * 0.5, 2)
+        per_user = round((c["amount"] - fund) / len(participants), 2)
+        total_amount += c["amount"]
 
-def keep_alive():
-    Thread(target=run).start()
+        for uid in participants:
+            user_earnings[uid] = user_earnings.get(uid, 0) + per_user
 
-if __name__ == "__main__":
-    keep_alive()
+    lines = [f"💰 Общая сумма: {total_amount:.2f} USD\n"]
+    for uid, earned in user_earnings.items():
+        lines.append(f"<@{uid}> — {earned:.2f} USD")
 
-    token = Config.DISCORD_BOT_TOKEN
-    if not token:
-        print("❌ DISCORD_BOT_TOKEN не установлен.")
-        exit(1)
+    await interaction.followup.send("\n".join(lines), ephemeral=True)
 
-    bot.run(token)
+# ----------------- Команда: /editcontract -----------------
+@bot.tree.command(name="editcontract", description="✏️ Редактировать контракт (название и сумма)")
+async def editcontract(interaction: discord.Interaction):
+    lang = await db.get_user_language(interaction.user.id)
 
+    try:
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True)
+        else:
+            await interaction.followup.defer(ephemeral=True)
+    except discord.HTTPException:
+        pass
 
+    contracts = await db.get_all_contracts()
+    user_contracts = [c for c in contracts if c["author_id"] == interaction.user.id]
+
+    if not user_contracts:
+        await interaction.followup.send(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
+        return
+
+    class ContractEdit(discord.ui.Select):
+        def __init__(self):
+            options = [discord.SelectOption(label=c["name"], value=c["name"]) for c in user_contracts]
+            super().__init__(placeholder="Выбери контракт для редактирования", options=options)
+
+        async def callback(self, select_interaction: discord.Interaction):
+            selected_name = self.values[0]
+            contract = await db.get_contract_by_name(selected_name)
+
+            modal = discord.ui.Modal(title="Редактирование контракта")
+
+            name_input = discord.ui.TextInput(label="Новое название", default=contract["name"], required=True)
+            amount_input = discord.ui.TextInput(label="Новая сумма (USD)", default=str(contract["amount"]), required=True)
+
+            modal.add_item(name_input)
+            modal.add_item(amount_input)
+
+            async def on_submit(interaction_modal: discord.Interaction):
+                try:
+                    new_amount = float(amount_input.value)
+                    if new_amount <= 0:
+                        await interaction_modal.response.send_message(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
+                        return
+                except ValueError:
+                    await interaction_modal.response.send_message(lang_manager.get_text("invalid_amount", lang), ephemeral=True)
+                    return
+
+                await db.update_contract(selected_name, name_input.value, new_amount)
+                text = lang_manager.get_text("contract_updated_success", lang).format(name=name_input.value, amount=new_amount)
+                await interaction_modal.response.send_message(text, ephemeral=True)
+
+            modal.on_submit = on_submit
+            await select_interaction.response.send_modal(modal)
+
+    view = discord.ui.View(timeout=180)
+    view.add_item(ContractEdit())
+    await interaction.followup.send(view=view, ephemeral=True)
+# ----------------- Команда: /deletecontract -----------------
+@bot.tree.command(name="deletecontract", description="❌ Удалить контракт (только для администратора)")
+async def deletecontract(interaction: discord.Interaction):
+    lang = await db.get_user_language(interaction.user.id)
+
+    if not is_admin(interaction.user):
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
+        return
+
+    contracts = await db.get_all_contracts()
+    if not contracts:
+        await interaction.response.send_message(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
+        return
+
+    class DeleteSelect(discord.ui.Select):
+        def __init__(self):
+            options = [discord.SelectOption(label=c["name"], value=c["name"]) for c in contracts]
+            super().__init__(placeholder="Выбери контракт для удаления", options=options)
+
+        async def callback(self, select_interaction: discord.Interaction):
+            selected_name = self.values[0]
+            await db.delete_contract_by_name(selected_name)
+            text = lang_manager.get_text("contract_deleted_success", lang).format(name=selected_name)
+            await select_interaction.response.send_message(text, ephemeral=True)
+
+    view = discord.ui.View(timeout=60)
+    view.add_item(DeleteSelect())
+    await interaction.response.send_message(view=view, ephemeral=True)
