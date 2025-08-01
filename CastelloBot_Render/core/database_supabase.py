@@ -1,64 +1,99 @@
 import os
-import asyncio
 from supabase import create_client, Client
 
+# Загрузка переменных окружения
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    raise RuntimeError("SUPABASE_URL и SUPABASE_KEY должны быть установлены в переменных окружения")
+if not SUPABASE_URL:
+    raise RuntimeError("Ошибка: переменная окружения SUPABASE_URL не установлена или пуста")
+if not SUPABASE_KEY:
+    raise RuntimeError("Ошибка: переменная окружения SUPABASE_KEY не установлена или пуста")
 
+print(f"Supabase URL: {SUPABASE_URL[:10]}...")  # Показываем начало, чтобы не светить полностью
+print(f"Supabase Key: {SUPABASE_KEY[:10]}...")
+
+# Создаем клиент
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-
+# Добавить контракт
 async def add_contract(name: str, amount: float, author_id: int):
     data = {
         "name": name,
         "amount": amount,
         "author_id": author_id,
-        "participants": [author_id]
+        "participants": [author_id]  # всегда сохраняем участника
     }
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: supabase.table("contracts").insert(data).execute())
+    response = supabase.table("contracts").insert(data).execute()
+    if response.error:
+        print(f"Error add_contract: {response.error}")
 
-
+# Получить контракт по названию
 async def get_contract_by_name(name: str):
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, lambda: supabase.table("contracts").select("*").eq("name", name).limit(1).execute())
-    return result.data[0] if result.data else None
+    response = supabase.table("contracts").select("*").eq("name", name).limit(1).execute()
+    if response.error:
+        print(f"Error get_contract_by_name: {response.error}")
+        return None
+    return response.data[0] if response.data else None
 
-
+# Получить все контракты
 async def get_all_contracts():
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, lambda: supabase.table("contracts").select("*").execute())
-    return result.data
+    response = supabase.table("contracts").select("*").execute()
+    if response.error:
+        print(f"Error get_all_contracts: {response.error}")
+        return []
+    return response.data or []
 
-
+# Обновить контракт
 async def update_contract(old_name: str, new_name: str, new_amount: float):
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: supabase.table("contracts").update({
+    response = supabase.table("contracts").update({
         "name": new_name,
         "amount": new_amount
-    }).eq("name", old_name).execute())
+    }).eq("name", old_name).execute()
+    if response.error:
+        print(f"Error update_contract: {response.error}")
 
-
+# Удалить контракт
 async def delete_contract_by_name(name: str):
-    loop = asyncio.get_running_loop()
-    await loop.run_in_executor(None, lambda: supabase.table("contracts").delete().eq("name", name).execute())
+    response = supabase.table("contracts").delete().eq("name", name).execute()
+    if response.error:
+        print(f"Error delete_contract_by_name: {response.error}")
 
-
+# Установить язык пользователя
 async def set_user_language(user_id: int, lang: str):
-    loop = asyncio.get_running_loop()
-    existing = await loop.run_in_executor(None, lambda: supabase.table("languages").select("*").eq("user_id", user_id).execute())
+    existing = supabase.table("languages").select("*").eq("user_id", user_id).execute()
+    if existing.error:
+        print(f"Error set_user_language (select): {existing.error}")
+        return
     if existing.data:
-        await loop.run_in_executor(None, lambda: supabase.table("languages").update({"lang": lang}).eq("user_id", user_id).execute())
+        response = supabase.table("languages").update({"lang": lang}).eq("user_id", user_id).execute()
+        if response.error:
+            print(f"Error set_user_language (update): {response.error}")
     else:
-        await loop.run_in_executor(None, lambda: supabase.table("languages").insert({"user_id": user_id, "lang": lang}).execute())
+        response = supabase.table("languages").insert({"user_id": user_id, "lang": lang}).execute()
+        if response.error:
+            print(f"Error set_user_language (insert): {response.error}")
 
-
+# Получить язык пользователя
 async def get_user_language(user_id: int):
-    loop = asyncio.get_running_loop()
-    result = await loop.run_in_executor(None, lambda: supabase.table("languages").select("*").eq("user_id", user_id).limit(1).execute())
-    if result.data:
-        return result.data[0]["lang"]
-    return "ru"
+    response = supabase.table("languages").select("*").eq("user_id", user_id).limit(1).execute()
+    if response.error:
+        print(f"Error get_user_language: {response.error}")
+        return "ru"
+    if response.data:
+        return response.data[0]["lang"]
+    return "ru"  # по умолчанию
+
+# Сохранить отчёт
+async def save_report(report_data: dict):
+    response = supabase.table("reports").insert(report_data).execute()
+    if response.error:
+        print(f"Error save_report: {response.error}")
+
+# Получить все отчёты
+async def get_all_reports():
+    response = supabase.table("reports").select("*").execute()
+    if response.error:
+        print(f"Error get_all_reports: {response.error}")
+        return []
+    return response.data or []
