@@ -1,5 +1,6 @@
-class LanguageManager:
-    def __init__(self):
+class Language:
+    def __init__(self, lang: str = "ru"):
+        self.lang = lang
         self.texts = {
             "language_set_ru": {
                 "ru": "Язык установлен: Русский",
@@ -94,10 +95,32 @@ class LanguageManager:
             "no_reports_found": {
                 "ru": "❌ Нет сохранённых отчётов.",
                 "ua": "❌ Немає збережених звітів."
-            }
+            },
+            "error_no_args": {
+                "ru": "❌ Пожалуйста, укажи название контракта и сумму.",
+                "ua": "❌ Будь ласка, вкажи назву контракту та суму."
+            },
+            "error_invalid_format": {
+                "ru": "❌ Неверный формат. Используй: название сумма",
+                "ua": "❌ Неправильний формат. Використовуй: назва сума"
+            },
+            "error_contract_exists": {
+                "ru": "❌ Контракт с таким названием уже существует.",
+                "ua": "❌ Контракт з такою назвою вже існує."
+            },
+            "use_command_addcontract": {
+                "ru": "Для добавления контракта используй команду /addcontract название сумма",
+                "ua": "Для додавання контракту використовуй команду /addcontract назва сума"
+            },
+            "use_command_report": {
+                "ru": "Для получения отчёта используй команду /report",
+                "ua": "Для отримання звіту використовуй команду /report"
+            },
         }
 
-    def get_text(self, key: str, lang: str) -> str:
-        if key not in self.texts:
-            return "⚠️ Текст не найден."
-        return self.texts[key].get(lang) or self.texts[key].get("ru") or "⚠️ Текст не найден."
+    def lang(self, key: str, **kwargs) -> str:
+        text = self.texts.get(key, {}).get(self.lang, self.texts.get(key, {}).get("ru", "⚠️ Текст не найден."))
+        try:
+            return text.format(**kwargs)
+        except Exception:
+
