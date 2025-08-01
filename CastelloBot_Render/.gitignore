@@ -1,4 +1,14 @@
 __pycache__/
 *.pyc
+
 .env
 env.txt
+
+.venv/
+venv/
+
+*.log
+
+build/
+dist/
+*.egg-info/
