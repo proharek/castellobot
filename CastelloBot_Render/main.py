@@ -65,6 +65,7 @@ async def menu(interaction: discord.Interaction):
 
 @tree.command(name="report")
 async def report(interaction: discord.Interaction):
+    # Очень важно: defer вызывается сразу при входе в команду!
     await interaction.response.defer(ephemeral=True)
     try:
         contracts = await get_all_contracts()
@@ -276,4 +277,3 @@ async def on_ready():
     await bot.tree.sync()
 
 bot.run(DISCORD_TOKEN)
-
