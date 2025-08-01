@@ -101,4 +101,3 @@ class LanguageManager:
         if key not in self.texts:
             return "⚠️ Текст не найден."
         return self.texts[key].get(lang) or self.texts[key].get("ru") or "⚠️ Текст не найден."
-
