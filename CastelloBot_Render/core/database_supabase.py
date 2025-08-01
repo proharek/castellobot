@@ -1,111 +1,52 @@
-import aiohttp
 import os
+from supabase import create_client, Client
 
-class DatabaseManager:
-    def __init__(self, supabase_url: str, supabase_key: str):
-        self.url = supabase_url
-        self.key = supabase_key
-        self.headers = {
-            "apikey": self.key,
-            "Authorization": f"Bearer {self.key}",
-            "Content-Type": "application/json"
-        }
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-    async def set_user_language(self, user_id: int, language: str):
-        async with aiohttp.ClientSession() as session:
-            await session.post(
-                f"{self.url}/rest/v1/users",
-                headers=self.headers,
-                json={"user_id": user_id, "language": language},
-                params={"on_conflict": "user_id"}
-            )
+# Добавить контракт
+async def add_contract(name: str, amount: float, author_id: int):
+    data = {
+        "name": name,
+        "amount": amount,
+        "author_id": author_id,
+        "participants": [author_id]  # всегда сохраняем участника
+    }
+    supabase.table("contracts").insert(data).execute()
 
-    async def get_user_language(self, user_id: int) -> str:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.url}/rest/v1/users",
-                headers=self.headers,
-                params={
-                    "user_id": f"eq.{user_id}",
-                    "select": "language"
-                }
-            ) as response:
-                data = await response.json()
-                if data:
-                    return data[0]["language"]
-                return "ru"
+# Получить контракт по названию
+async def get_contract_by_name(name: str):
+    result = supabase.table("contracts").select("*").eq("name", name).limit(1).execute()
+    return result.data[0] if result.data else None
 
-    async def add_contract(self, name: str, amount: float, leader_id: int, participants: list, created_at: str):
-        async with aiohttp.ClientSession() as session:
-            await session.post(
-                f"{self.url}/rest/v1/contracts",
-                headers=self.headers,
-                json={
-                    "name": name,
-                    "amount": amount,
-                    "leader_id": leader_id,
-                    "participants": participants,
-                    "created_at": created_at
-                }
-            )
+# Получить все контракты
+async def get_all_contracts():
+    result = supabase.table("contracts").select("*").execute()
+    return result.data
 
-    async def get_all_contracts(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.url}/rest/v1/contracts",
-                headers=self.headers,
-                params={"select": "*"}
-            ) as response:
-                return await response.json()
+# Обновить контракт
+async def update_contract(old_name: str, new_name: str, new_amount: float):
+    supabase.table("contracts").update({
+        "name": new_name,
+        "amount": new_amount
+    }).eq("name", old_name).execute()
 
-    async def get_contract_by_name(self, name: str):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.url}/rest/v1/contracts",
-                headers=self.headers,
-                params={
-                    "name": f"eq.{name}",
-                    "select": "*"
-                }
-            ) as response:
-                data = await response.json()
-                return data[0] if data else None
+# Удалить контракт
+async def delete_contract_by_name(name: str):
+    supabase.table("contracts").delete().eq("name", name).execute()
 
-    async def update_contract(self, name: str, new_name: str, new_amount: float):
-        async with aiohttp.ClientSession() as session:
-            await session.patch(
-                f"{self.url}/rest/v1/contracts",
-                headers=self.headers,
-                params={"name": f"eq.{name}"},
-                json={"name": new_name, "amount": new_amount}
-            )
+# Установить язык пользователя
+async def set_user_language(user_id: int, lang: str):
+    existing = supabase.table("languages").select("*").eq("user_id", user_id).execute()
+    if existing.data:
+        supabase.table("languages").update({"lang": lang}).eq("user_id", user_id).execute()
+    else:
+        supabase.table("languages").insert({"user_id": user_id, "lang": lang}).execute()
 
-    async def delete_contract_by_name(self, name: str):
-        async with aiohttp.ClientSession() as session:
-            await session.delete(
-                f"{self.url}/rest/v1/contracts",
-                headers=self.headers,
-                params={"name": f"eq.{name}"}
-            )
-
-    async def save_report(self, content: str, author_id: int, contract_name: str, created_at: str):
-        async with aiohttp.ClientSession() as session:
-            await session.post(
-                f"{self.url}/rest/v1/reports",
-                headers=self.headers,
-                json={
-                    "content": content,
-                    "author_id": author_id,
-                    "contract_name": contract_name,
-                    "created_at": created_at
-                }
-            )
-
-    async def get_all_reports(self):
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                f"{self.url}/rest/v1/reports",
-                headers=self.headers,
-                params={"select": "*"}
-            ) as response:
-                return await response.json()
+# Получить язык пользователя
+async def get_user_language(user_id: int):
+    result = supabase.table("languages").select("*").eq("user_id", user_id).limit(1).execute()
+    if result.data:
+        return result.data[0]["lang"]
+    return "ru"  # по умолчанию
