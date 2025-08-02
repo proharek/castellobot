@@ -60,9 +60,6 @@ class AddParticipantsButton(discord.ui.Button):
                 await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
                 return
 
-            # Временно сохраняем участников в сессии (просто в памяти у кнопки, для этого примера)
-            # Можно сделать кэш или словарь для временного хранения, но для простоты просто отвечаем с новым отчётом
-
             contract = db.get_contract_by_name(self.contract_name)
             if not contract:
                 await interaction.followup.send(lang_manager.get_text("contract_not_found", self.lang), ephemeral=True)
@@ -169,7 +166,6 @@ async def edit_contract(interaction: discord.Interaction, name: str, amount: flo
 @app_commands.describe(name="Название контракта")
 async def delete_contract(interaction: discord.Interaction, name: str):
     lang = db.get_user_language(interaction.user.id)
-    # Проверяем, есть ли у пользователя права администратора (удалять может админ)
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
@@ -212,7 +208,6 @@ async def report(interaction: discord.Interaction):
             per_user=f"{per_user:.2f}"
         )
 
-        # Добавляем кнопку "➕ Добавить участников"
         view = discord.ui.View()
         view.add_item(AddParticipantsButton(contract["name"], lang))
         await inter.response.edit_message(content=text, embed=None, view=view)
@@ -248,7 +243,7 @@ async def send_report(interaction: discord.Interaction, contract_name: str):
     }
 
     db.save_report(report)
-    await interaction.response.send_message(f"✅ Отчёт по контракту **{contract_name}** сохранён.", ephemeral=True)
+    await interaction.response.send_message(lang_manager.get_text("report_saved", lang).format(name=contract_name), ephemeral=True)
 
 # --- Команда /reportdays ---
 @bot.tree.command(name="reportdays", description="📅 Отчёт за последние дни")
@@ -261,14 +256,13 @@ async def report_days(interaction: discord.Interaction, days: int = Config.DEFAU
 
     reports = db.get_reports_by_days(days)
     if not reports:
-        await interaction.response.send_message(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
+        await interaction.response.send_message(lang_manager.get_text("report_not_found", lang), ephemeral=True)
         return
 
     total_amount = sum(r["amount"] for r in reports)
     total_fund = sum(r["fund"] for r in reports)
     total_payout = sum(r["per_user"] * len(r["participants"]) for r in reports)
 
-    # Считаем доходы участников
     earnings = {}
     for r in reports:
         for p in r["participants"]:
@@ -303,6 +297,17 @@ async def info(interaction: discord.Interaction):
     )
     await interaction.response.send_message(text, ephemeral=True)
 
+# --- Событие on_ready для синхронизации команд ---
+@bot.event
+async def on_ready():
+    # Для быстрой отладки, можно синхронизировать только по гильдии, замените ID на свой тестовый сервер:
+    # guild = discord.Object(id=ВАШ_ID_ГИЛЬДИИ)
+    # await bot.tree.sync(guild=guild)
+
+    # Глобальная синхронизация (может занять до часа)
+    await bot.tree.sync()
+    print(f"Бот {bot.user} готов и команды синхронизированы")
+
 # --- Запуск ---
 if __name__ == "__main__":
     keep_alive()
@@ -311,3 +316,4 @@ if __name__ == "__main__":
         print("❌ DISCORD_BOT_TOKEN не установлен.")
         exit(1)
     bot.run(token)
+
