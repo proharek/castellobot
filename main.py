@@ -170,7 +170,7 @@ class LanguageManager:
     def get_text(self, key: str, lang: str) -> str:
         return self.texts.get(lang, self.texts[Config.DEFAULT_LANGUAGE]).get(key, f"[{key}]")
 
-# ⬇️ Кнопка "➕ Добавить участников" для отчёта
+# --- Кнопка "➕ Добавить участников" ---
 class AddParticipantsButton(discord.ui.Button):
     def __init__(self, contract: dict, lang: str):
         super().__init__(label="➕ Добавить участников", style=discord.ButtonStyle.primary)
@@ -178,6 +178,10 @@ class AddParticipantsButton(discord.ui.Button):
         self.lang = lang
 
     async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.contract["author_id"]:
+            await interaction.response.send_message(lang_manager.get_text("no_permission", self.lang), ephemeral=True)
+            return
+
         await interaction.response.send_message(lang_manager.get_text("edit_participants_prompt", self.lang), ephemeral=True)
 
         def check(m: discord.Message):
@@ -221,6 +225,25 @@ def run_flask():
 def keep_alive():
     Thread(target=run_flask, daemon=True).start()
 
+# --- View для выбора контракта ---
+class ContractSelect(discord.ui.Select):
+    def __init__(self, contracts: List[dict], lang: str, callback):
+        options = [
+            discord.SelectOption(label=c["name"], description=f'{c["amount"]} USD', value=c["name"])
+            for c in contracts[:Config.MAX_CONTRACTS_DISPLAY]
+        ]
+        super().__init__(placeholder=lang_manager.get_text("select_contract", lang), options=options)
+        self.callback_func = callback
+        self.lang = lang
+
+    async def callback(self, interaction: discord.Interaction):
+        await self.callback_func(interaction, self.values[0], self.lang)
+
+class ContractSelectView(discord.ui.View):
+    def __init__(self, contracts: List[dict], lang: str, callback):
+        super().__init__(timeout=120)
+        self.add_item(ContractSelect(contracts, lang, callback))
+
 # --- Команда смены языка ---
 @bot.tree.command(name="language", description="🌐 Сменить язык")
 @app_commands.choices(language=[
@@ -254,25 +277,6 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
 
     db.add_contract(contract)
     await interaction.response.send_message(lang_manager.get_text("contract_added", lang).format(name=name, amount=amount))
-
-# --- View для выбора контракта ---
-class ContractSelect(discord.ui.Select):
-    def __init__(self, contracts: List[dict], lang: str, callback):
-        options = [
-            discord.SelectOption(label=c["name"], description=f'{c["amount"]} USD', value=c["name"])
-            for c in contracts[:Config.MAX_CONTRACTS_DISPLAY]
-        ]
-        super().__init__(placeholder=lang_manager.get_text("select_contract", lang), options=options)
-        self.callback_func = callback
-        self.lang = lang
-
-    async def callback(self, interaction: discord.Interaction):
-        await self.callback_func(interaction, self.values[0], self.lang)
-
-class ContractSelectView(discord.ui.View):
-    def __init__(self, contracts: List[dict], lang: str, callback):
-        super().__init__(timeout=120)
-        self.add_item(ContractSelect(contracts, lang, callback))
 
 # --- Команда показать меню ---
 @bot.tree.command(name="menu", description="📋 Главное меню")
@@ -328,6 +332,50 @@ async def report(interaction: discord.Interaction):
 
     view = ContractSelectView(contracts, lang, on_select)
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
+
+# --- Команда редактировать участников ---
+@bot.tree.command(name="editparticipants", description="✏️ Редактировать участников контракта")
+async def edit_participants(interaction: discord.Interaction):
+    lang = db.get_user_language(interaction.user.id)
+    contracts = db.get_all_contracts()
+    if not contracts:
+        await interaction.response.send_message(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
+        return
+
+    async def on_select(inter: discord.Interaction, contract_name: str, lang: str):
+        contract = db.get_contract_by_name(contract_name)
+        if not contract:
+            await inter.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
+            return
+
+        await inter.response.send_message(lang_manager.get_text("edit_participants_prompt", lang), ephemeral=True)
+
+        def check(m: discord.Message):
+            return m.author == inter.user and m.channel == inter.channel
+
+        try:
+            msg = await bot.wait_for('message', check=check, timeout=60)
+            mentions = msg.mentions
+            if not mentions:
+                await inter.followup.send(lang_manager.get_text("participants_empty", lang), ephemeral=True)
+                return
+
+            contract["participants"] = [f"@{u.display_name}" for u in mentions]
+            contract["timestamp"] = datetime.now(timezone.utc).isoformat()
+            db.update_contract(contract)
+            await inter.followup.send(lang_manager.get_text("participants_added", lang).format(name=contract_name), ephemeral=True)
+
+        except Exception:
+            await inter.followup.send(lang_manager.get_text("participants_empty", lang), ephemeral=True)
+
+    view = ContractSelectView(contracts, lang, on_select)
+    await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
+
+# --- Синхронизация команд при старте ---
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"Logged in as {bot.user} (ID: {bot.user.id})")
 
 # --- Запуск ---
 if __name__ == "__main__":
