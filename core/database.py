@@ -1,6 +1,9 @@
 import sqlite3
 import json
-from typing import Optional, List
+from typing import List, Optional
+from datetime import datetime, timezone
+
+from main import Config  # если в main.py хранится Config — иначе скопируй конфиг сюда
 
 class DatabaseManager:
     def __init__(self, db_path: str = "database.db"):
@@ -25,8 +28,6 @@ class DatabaseManager:
                     language TEXT
                 )
             """)
-
-    # === Контракты ===
 
     def add_contract(self, contract: dict):
         with self.conn:
@@ -90,8 +91,6 @@ class DatabaseManager:
         with self.conn:
             self.conn.execute("DELETE FROM contracts WHERE name = ?", (name,))
 
-    # === Язык пользователя ===
-
     def set_user_language(self, user_id: int, lang: str):
         with self.conn:
             self.conn.execute("""
@@ -103,5 +102,4 @@ class DatabaseManager:
         cur = self.conn.cursor()
         cur.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
         row = cur.fetchone()
-        return row[0] if row else "ru"  # русский по умолчанию
-
+        return row[0] if row else Config.DEFAULT_LANGUAGE
