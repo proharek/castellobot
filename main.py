@@ -180,6 +180,10 @@ lang_manager = LanguageManager()
 # --- Flask для /healthz ---
 app = Flask('')
 
+@app.route('/')
+def index():
+    return jsonify({"status": "bot is running"}), 200
+
 @app.route('/healthz')
 def healthz():
     return jsonify({"status": "ok", "time": datetime.now(timezone.utc).isoformat()}), 200
