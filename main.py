@@ -7,7 +7,7 @@ from typing import List, Optional
 import discord
 from discord.ext import commands
 from discord import app_commands
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify
 
 # --- Конфиг ---
 class Config:
@@ -255,7 +255,7 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
     db.add_contract(contract)
     await interaction.response.send_message(lang_manager.get_text("contract_added", lang).format(name=name, amount=amount))
 
-# --- View для выбора контракта (для /report) ---
+# --- View для выбора контракта ---
 class ContractSelect(discord.ui.Select):
     def __init__(self, contracts: List[dict], lang: str, callback):
         options = [
@@ -337,4 +337,3 @@ if __name__ == "__main__":
         print("❌ DISCORD_BOT_TOKEN не установлен.")
         exit(1)
     bot.run(token)
-
