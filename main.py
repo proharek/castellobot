@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime, timezone, timedelta
 from threading import Thread
-from typing import List, Optional
+from typing import List
 
 import discord
 from discord.ext import commands
@@ -56,16 +56,22 @@ class AddParticipantsButton(discord.ui.Button):
         try:
             msg = await bot.wait_for('message', check=check, timeout=60)
             mentions = msg.mentions
+
+            # Если нет упоминаний — пробуем взять слова с @
             if not mentions:
-                await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
-                return
+                words = msg.content.split()
+                possible_names = [w for w in words if w.startswith("@") and len(w) > 1]
+                if not possible_names:
+                    await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
+                    return
+                temp_participants = possible_names
+            else:
+                temp_participants = [f"@{u.display_name}" for u in mentions]
 
             contract = db.get_contract_by_name(self.contract_name)
             if not contract:
                 await interaction.followup.send(lang_manager.get_text("contract_not_found", self.lang), ephemeral=True)
                 return
-
-            temp_participants = [f"@{u.display_name}" for u in mentions]
 
             participants_text = "\n".join(f"• {p}" for p in temp_participants)
 
@@ -82,9 +88,11 @@ class AddParticipantsButton(discord.ui.Button):
                 fund=f"{fund:.2f}",
                 per_user=f"{per_user:.2f}"
             )
+
             await interaction.followup.send(text, ephemeral=True)
 
-        except Exception:
+        except Exception as e:
+            print(f"[AddParticipants] Error: {e}")
             await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
 
 # --- View для выбора контракта ---
@@ -297,17 +305,6 @@ async def info(interaction: discord.Interaction):
     )
     await interaction.response.send_message(text, ephemeral=True)
 
-# --- Событие on_ready для синхронизации команд ---
-@bot.event
-async def on_ready():
-    # Для быстрой отладки, можно синхронизировать только по гильдии, замените ID на свой тестовый сервер:
-    # guild = discord.Object(id=ВАШ_ID_ГИЛЬДИИ)
-    # await bot.tree.sync(guild=guild)
-
-    # Глобальная синхронизация (может занять до часа)
-    await bot.tree.sync()
-    print(f"Бот {bot.user} готов и команды синхронизированы")
-
 # --- Запуск ---
 if __name__ == "__main__":
     keep_alive()
@@ -316,4 +313,3 @@ if __name__ == "__main__":
         print("❌ DISCORD_BOT_TOKEN не установлен.")
         exit(1)
     bot.run(token)
-
