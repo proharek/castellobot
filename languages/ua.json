@@ -18,5 +18,11 @@
   "edit_participants_label": "Введіть список учасників (кожного з нового рядка)",
   "edit_participants_placeholder": "@User1\n@User2\n@User3",
   "edit_participants_button": "✏️ Змінити учасників",
-  "participants_updated": "Список учасників оновлено для контракту **{name}**."
+  "participants_updated": "Список учасників оновлено для контракту **{name}**.",
+  "participants_added": "Учасників додано до контракту **{name}**.",
+  "edit_participants_prompt": "Надішліть теги учасників через пробіл.",
+  "participants_empty": "Список учасників не може бути порожнім.",
+  "report_saved": "✅ Звіт по контракту **{name}** збережено.",
+  "report_already_saved": "⚠️ Звіт по цьому контракту вже був збережений.",
+  "report_not_found": "Звіти не знайдено."
 }
