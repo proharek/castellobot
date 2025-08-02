@@ -1,6 +1,7 @@
 import sqlite3
 import json
 from typing import Optional, List
+from datetime import datetime, timedelta
 
 class DatabaseManager:
     def __init__(self, db_path: str = "database.db"):
@@ -23,6 +24,19 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS users (
                     user_id INTEGER PRIMARY KEY,
                     language TEXT
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_name TEXT,
+                    author_id INTEGER,
+                    author_name TEXT,
+                    participants TEXT,
+                    amount REAL,
+                    fund REAL,
+                    per_user REAL,
+                    timestamp TEXT
                 )
             """)
 
@@ -103,5 +117,45 @@ class DatabaseManager:
         cur = self.conn.cursor()
         cur.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
         row = cur.fetchone()
-        return row[0] if row else "ru"  # русский по умолчанию
+        return row[0] if row else "ru"
 
+    # === Отчёты ===
+
+    def save_report(self, report: dict):
+        with self.conn:
+            self.conn.execute("""
+                INSERT INTO reports (contract_name, author_id, author_name, participants, amount, fund, per_user, timestamp)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                report["contract_name"],
+                report["author_id"],
+                report["author_name"],
+                json.dumps(report["participants"]),
+                report["amount"],
+                report["fund"],
+                report["per_user"],
+                report["timestamp"]
+            ))
+
+    def get_reports_by_days(self, days: int) -> List[dict]:
+        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        cur = self.conn.cursor()
+        cur.execute("""
+            SELECT contract_name, author_id, author_name, participants, amount, fund, per_user, timestamp
+            FROM reports
+            WHERE timestamp >= ?
+        """, (cutoff,))
+        rows = cur.fetchall()
+        return [
+            {
+                "contract_name": row[0],
+                "author_id": row[1],
+                "author_name": row[2],
+                "participants": json.loads(row[3]),
+                "amount": row[4],
+                "fund": row[5],
+                "per_user": row[6],
+                "timestamp": row[7]
+            }
+            for row in rows
+        ]
