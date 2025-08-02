@@ -23,19 +23,9 @@ class LanguageManager:
                 print(f"[LanguageManager] Файл не найден: {path}")
 
     def get_text(self, key: str, lang: str) -> str:
-        # Если языка нет — использовать язык по умолчанию
         if lang not in self.languages:
             lang = self.default_language
-
-        # Пытаемся получить текст в нужном языке
         value = self.languages.get(lang, {}).get(key)
         if value is not None:
             return value
-
-        # Если ключа нет — пробуем взять из языка по умолчанию
-        value = self.languages.get(self.default_language, {}).get(key)
-        if value is not None:
-            return value
-
-        # Если ключ нигде не найден — вернуть ключ в квадратных скобках
-        return f"[{key}]"
+        return self.languages.get(self.default_language, {}).get(key, f"[{key}]")
