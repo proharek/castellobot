@@ -1,4 +1,0 @@
-discord.py>=2.0.0
-flask
-supabase
-python-dotenv
