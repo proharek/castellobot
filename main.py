@@ -170,6 +170,33 @@ class LanguageManager:
     def get_text(self, key: str, lang: str) -> str:
         return self.texts.get(lang, self.texts[Config.DEFAULT_LANGUAGE]).get(key, f"[{key}]")
 
+# ⬇️ Кнопка "➕ Добавить участников" для отчёта
+class AddParticipantsButton(discord.ui.Button):
+    def __init__(self, contract: dict, lang: str):
+        super().__init__(label="➕ Добавить участников", style=discord.ButtonStyle.primary)
+        self.contract = contract
+        self.lang = lang
+
+    async def callback(self, interaction: discord.Interaction):
+        await interaction.response.send_message(lang_manager.get_text("edit_participants_prompt", self.lang), ephemeral=True)
+
+        def check(m: discord.Message):
+            return m.author == interaction.user and m.channel == interaction.channel
+
+        try:
+            msg = await bot.wait_for("message", check=check, timeout=60)
+            mentions = msg.mentions
+            if not mentions:
+                await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
+                return
+
+            self.contract["participants"] = [f"@{u.display_name}" for u in mentions]
+            self.contract["timestamp"] = datetime.now(timezone.utc).isoformat()
+            db.update_contract(self.contract)
+            await interaction.followup.send(lang_manager.get_text("participants_added", self.lang).format(name=self.contract["name"]), ephemeral=True)
+        except Exception:
+            await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
+
 # --- Инициализация ---
 intents = discord.Intents.default()
 intents.message_content = True
@@ -228,7 +255,7 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
     db.add_contract(contract)
     await interaction.response.send_message(lang_manager.get_text("contract_added", lang).format(name=name, amount=amount))
 
-# --- View для выбора контракта (для /report и /editparticipants) ---
+# --- View для выбора контракта (для /report) ---
 class ContractSelect(discord.ui.Select):
     def __init__(self, contracts: List[dict], lang: str, callback):
         options = [
@@ -293,46 +320,11 @@ async def report(interaction: discord.Interaction):
             fund=f"{fund:.2f}",
             per_user=f"{per_user:.2f}"
         )
-        await inter.response.edit_message(content=text, embed=None, view=None)
 
-    view = ContractSelectView(contracts, lang, on_select)
-    await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
+        view = discord.ui.View(timeout=180)
+        view.add_item(AddParticipantsButton(contract, lang))
 
-# --- Команда редактировать участников ---
-@bot.tree.command(name="editparticipants", description="✏️ Редактировать участников контракта")
-async def edit_participants(interaction: discord.Interaction):
-    lang = db.get_user_language(interaction.user.id)
-    contracts = db.get_all_contracts()
-    if not contracts:
-        await interaction.response.send_message(lang_manager.get_text("no_contracts_found", lang), ephemeral=True)
-        return
-
-    async def on_select(inter: discord.Interaction, contract_name: str, lang: str):
-        contract = db.get_contract_by_name(contract_name)
-        if not contract:
-            await inter.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
-            return
-
-        # Спрашиваем участников через сообщение
-        await inter.response.send_message(lang_manager.get_text("edit_participants_prompt", lang), ephemeral=True)
-
-        def check(m: discord.Message):
-            return m.author == inter.user and m.channel == inter.channel
-
-        try:
-            msg = await bot.wait_for('message', check=check, timeout=60)
-            mentions = msg.mentions
-            if not mentions:
-                await inter.followup.send(lang_manager.get_text("participants_empty", lang), ephemeral=True)
-                return
-
-            contract["participants"] = [f"@{u.display_name}" for u in mentions]
-            contract["timestamp"] = datetime.now(timezone.utc).isoformat()
-            db.update_contract(contract)
-            await inter.followup.send(lang_manager.get_text("participants_added", lang).format(name=contract_name), ephemeral=True)
-
-        except Exception:
-            await inter.followup.send(lang_manager.get_text("participants_empty", lang), ephemeral=True)
+        await inter.response.edit_message(content=text, embed=None, view=view)
 
     view = ContractSelectView(contracts, lang, on_select)
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
@@ -345,3 +337,4 @@ if __name__ == "__main__":
         print("❌ DISCORD_BOT_TOKEN не установлен.")
         exit(1)
     bot.run(token)
+
