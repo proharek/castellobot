@@ -40,7 +40,6 @@ class DatabaseManager:
                 )
             """)
 
-    # --- Контракты ---
     def add_contract(self, contract: dict):
         with self.conn:
             self.conn.execute("""
@@ -103,7 +102,6 @@ class DatabaseManager:
         with self.conn:
             self.conn.execute("DELETE FROM contracts WHERE name = ?", (name,))
 
-    # --- Язык пользователя ---
     def set_user_language(self, user_id: int, lang: str):
         with self.conn:
             self.conn.execute("""
@@ -117,7 +115,6 @@ class DatabaseManager:
         row = cur.fetchone()
         return row[0] if row else "ru"
 
-    # --- Отчёты ---
     def save_report(self, report: dict):
         with self.conn:
             self.conn.execute("""
@@ -148,7 +145,7 @@ class DatabaseManager:
                 "contract_name": row[0],
                 "author_id": row[1],
                 "author_name": row[2],
-                "participants": json.loads(row[3]) if row[3] else [],
+                "participants": json.loads(row[3]),
                 "amount": row[4],
                 "fund": row[5],
                 "per_user": row[6],
