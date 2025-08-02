@@ -79,11 +79,13 @@ async def edit_contract(interaction: discord.Interaction, name: str, amount: flo
         return
 
     contract["amount"] = amount
+    contract["timestamp"] = datetime.now(timezone.utc).isoformat()
     db.update_contract(contract)
 
     await interaction.response.send_message(
         lang_manager.get_text("contract_updated_success", lang).format(name=name, amount=amount)
     )
+
 @bot.tree.command(name="deletecontract", description="❌ Удалить контракт")
 @app_commands.describe(name="Название контракта")
 async def delete_contract(interaction: discord.Interaction, name: str):
@@ -133,6 +135,7 @@ async def report(interaction: discord.Interaction):
             if not participants:
                 participants = [self.contract["author_name"]]
             self.contract["participants"] = participants
+            self.contract["timestamp"] = datetime.now(timezone.utc).isoformat()
             db.update_contract(self.contract)
 
             fund = self.contract["amount"] * Config.FUND_PERCENTAGE
@@ -252,21 +255,24 @@ async def menu(interaction: discord.Interaction):
     )
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
-# === Flask для UptimeRobot ===
-app = Flask('')
+# === Flask для UptimeRobot и Render ===
+
+app = Flask(__name__)
 
 @app.route('/')
 def home():
-    print("✅ Flask получил пинг от Cloudflare")
     return "Bot is alive!"
 
-def run():
+@app.route('/healthz')
+def healthz():
+    return "OK", 200
+
+def run_flask():
     app.run(host='0.0.0.0', port=8080)
 
 def keep_alive():
-    Thread(target=run).start()
+    Thread(target=run_flask).start()
 
-# === Запуск бота ===
 if __name__ == "__main__":
     keep_alive()
     token = Config.DISCORD_BOT_TOKEN
