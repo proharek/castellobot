@@ -385,3 +385,4 @@ if __name__ == "__main__":
         print("❌ DISCORD_BOT_TOKEN не установлен.")
         exit(1)
     bot.run(token)
+
