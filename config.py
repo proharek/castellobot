@@ -1,8 +1,6 @@
 import os
 
 class Config:
-    """Настройки Discord-бота и системы"""
-
     DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
 
     DEFAULT_LANGUAGE = "ru"
