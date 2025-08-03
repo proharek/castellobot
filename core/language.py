@@ -25,5 +25,4 @@ class LanguageManager:
     def get_text(self, key: str, lang: str) -> str:
         if lang not in self.languages:
             lang = self.default_language
-        value = self.languages.get(lang, {}).get(key)
-        return value if value else f"[{key}]"
+        return self.languages.get(lang, {}).get(key, f"[{key}]")
