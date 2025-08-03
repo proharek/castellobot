@@ -2,6 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 load_dotenv()
+
 from datetime import datetime, timezone, timedelta
 from threading import Thread
 from typing import List
@@ -24,7 +25,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 db = DatabaseManager()
 lang_manager = LanguageManager()
 
-# --- Flask для Render ---
+# --- Flask для Render / UptimeRobot ---
 app = Flask('')
 
 @app.route('/')
@@ -40,7 +41,8 @@ def run_flask():
 
 def keep_alive():
     Thread(target=run_flask, daemon=True).start()
-# --- Кнопка для временного добавления участников ---
+
+# --- UI кнопка для добавления участников (временных) ---
 class AddParticipantsButton(discord.ui.Button):
     def __init__(self, contract_name: str, lang: str):
         super().__init__(label="➕ Добавить участников", style=discord.ButtonStyle.primary)
@@ -84,8 +86,10 @@ class AddParticipantsButton(discord.ui.Button):
                 per_user=f"{per_user:.2f}"
             )
 
+            # Отправка отчёта в канал (для всех)
             await interaction.channel.send(report_text)
 
+            # Автосохранение отчёта в базу
             report = {
                 "contract_name": contract["name"],
                 "author_id": contract["author_id"],
@@ -103,7 +107,7 @@ class AddParticipantsButton(discord.ui.Button):
         except Exception:
             await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
 
-# --- View для выбора контракта ---
+# --- Select для выбора контракта ---
 class ContractSelect(discord.ui.Select):
     def __init__(self, contracts: List[dict], lang: str, callback):
         options = [
@@ -121,6 +125,7 @@ class ContractSelectView(discord.ui.View):
     def __init__(self, contracts: List[dict], lang: str, callback):
         super().__init__(timeout=120)
         self.add_item(ContractSelect(contracts, lang, callback))
+
 # --- Команда /addcontract ---
 @bot.tree.command(name="addcontract", description="➕ Добавить контракт")
 @app_commands.describe(name="Название контракта", amount="Сумма контракта")
@@ -135,13 +140,11 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
         "amount": amount,
         "author_id": interaction.user.id,
         "author_name": interaction.user.display_name,
-        "participants": [],
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
     db.add_contract(contract)
     await interaction.response.send_message(lang_manager.get_text("contract_added", lang).format(name=name, amount=amount))
-
 # --- Команда /editcontract ---
 @bot.tree.command(name="editcontract", description="✏️ Редактировать контракт")
 @app_commands.describe(name="Название контракта", amount="Новая сумма")
@@ -151,7 +154,7 @@ async def edit_contract(interaction: discord.Interaction, name: str, amount: flo
     if not contract:
         await interaction.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
         return
-    if contract["author_id"] != interaction.user.id:
+    if contract.get("author_id") != interaction.user.id:
         await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
         return
     if amount <= 0:
@@ -159,7 +162,6 @@ async def edit_contract(interaction: discord.Interaction, name: str, amount: flo
         return
 
     contract["amount"] = amount
-    contract["timestamp"] = datetime.now(timezone.utc).isoformat()
     db.update_contract(contract)
     await interaction.response.send_message(lang_manager.get_text("contract_updated_success", lang).format(name=name, amount=amount))
 
@@ -193,18 +195,16 @@ async def report(interaction: discord.Interaction):
             await inter.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
             return
 
-        participants = contract["participants"]
-        participants_text = "\n".join(f"• {p}" for p in participants) if participants else "-"
+        participants = []  # Временные участники добавляются через кнопку
+        participants_text = "-"
 
         fund = contract["amount"] * Config.FUND_PERCENTAGE
         per_user = 0
-        if participants:
-            per_user = (contract["amount"] - fund) / len(participants)
 
         text = lang_manager.get_text("report_template", lang).format(
             name=contract["name"],
             amount=contract["amount"],
-            leader=contract["author_name"],
+            leader=contract.get("author_name", "N/A"),
             participants=participants_text,
             fund=f"{fund:.2f}",
             per_user=f"{per_user:.2f}"
@@ -216,6 +216,78 @@ async def report(interaction: discord.Interaction):
 
     view = ContractSelectView(contracts, lang, on_select)
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
+
+# --- Команда /reportdays ---
+@bot.tree.command(name="reportdays", description="📅 Отчёт за последние дни (только для админов)")
+@app_commands.describe(days="Количество дней для отчёта (максимум 30)")
+async def report_days(interaction: discord.Interaction, days: int = Config.DEFAULT_REPORT_DAYS):
+    lang = db.get_user_language(interaction.user.id)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
+        return
+
+    if days <= 0 or days > Config.MAX_REPORT_DAYS:
+        await interaction.response.send_message(f"❌ Введите число от 1 до {Config.MAX_REPORT_DAYS}.", ephemeral=True)
+        return
+
+    reports = db.get_reports_by_days(days)
+    if not reports:
+        await interaction.response.send_message(lang_manager.get_text("report_not_found", lang), ephemeral=True)
+        return
+
+    total_amount = sum(r["amount"] for r in reports)
+    total_fund = sum(r["fund"] for r in reports)
+    total_payout = sum(r["per_user"] * len(r["participants"]) for r in reports)
+
+    earnings = {}
+    for r in reports:
+        for p in r["participants"]:
+            earnings[p] = earnings.get(p, 0) + r["per_user"]
+
+    earnings_text = "\n".join(f"• {user}: {amount:.2f} USD" for user, amount in earnings.items())
+
+    text = lang_manager.get_text("report_days_summary", lang).format(
+        days=days,
+        total=total_amount,
+        fund=total_fund,
+        payout=total_payout,
+        earnings=earnings_text
+    )
+    await interaction.response.send_message(text, ephemeral=True)
+
+# --- Команда /cleanreports ---
+@bot.tree.command(name="cleanreports", description="🧹 Удалить отчёты старше N дней (только админ)")
+@app_commands.describe(days="Удалить отчёты старше этого количества дней")
+async def clean_reports(interaction: discord.Interaction, days: int = Config.REPORT_CLEANUP_DAYS):
+    lang = db.get_user_language(interaction.user.id)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
+        return
+    if days <= 0 or days > Config.MAX_REPORT_DAYS:
+        await interaction.response.send_message(f"❌ Введите число от 1 до {Config.MAX_REPORT_DAYS}.", ephemeral=True)
+        return
+
+    count = db.delete_reports_older_than(days)
+    await interaction.response.send_message(f"🧹 Удалено {count} отчётов старше {days} дней.", ephemeral=True)
+
+# --- Команда /language ---
+@bot.tree.command(name="language", description="🌐 Сменить язык")
+async def change_language(interaction: discord.Interaction):
+    lang = db.get_user_language(interaction.user.id)
+
+    class LanguageView(discord.ui.View):
+        @discord.ui.button(label=lang_manager.get_text("language_button_ru", lang), style=discord.ButtonStyle.primary)
+        async def ru_button(self, interaction_button: discord.Interaction, button: discord.ui.Button):
+            db.set_user_language(interaction.user.id, "ru")
+            await interaction_button.response.edit_message(content=lang_manager.get_text("language_set_ru", "ru"), view=None)
+
+        @discord.ui.button(label=lang_manager.get_text("language_button_ua", lang), style=discord.ButtonStyle.primary)
+        async def ua_button(self, interaction_button: discord.Interaction, button: discord.ui.Button):
+            db.set_user_language(interaction.user.id, "ua")
+            await interaction_button.response.edit_message(content=lang_manager.get_text("language_set_ua", "ua"), view=None)
+
+    await interaction.response.send_message(lang_manager.get_text("select_language", lang), view=LanguageView(), ephemeral=True)
+
 # --- Команда /info ---
 @bot.tree.command(name="info", description="ℹ️ Информация о командах")
 async def info(interaction: discord.Interaction):
@@ -227,22 +299,15 @@ async def info(interaction: discord.Interaction):
         "/editcontract — Редактировать контракт (только автор)\n"
         "/deletecontract — Удалить контракт (только админ)\n"
         "/report — Показать отчёт по контракту\n"
-        "/reportdays — Сводка за последние дни (админы)\n"
+        "/reportdays — Сводка за последние дни (только админ)\n"
+        "/cleanreports — Удалить отчёты старше N дней (только админ)\n"
         "/info — Информация о командах\n\n"
-        "📎 В отчёте доступна кнопка ➕ Добавить участников (временно, без сохранения).\n"
-        "📦 После добавления участников отчёт сохраняется автоматически в базу."
+        "В отчёте доступна кнопка ➕ Добавить участников (временно, без сохранения).\n"
+        "После добавления отчёт автоматически сохраняется в базу."
     )
     await interaction.response.send_message(text, ephemeral=True)
 
-# --- Синхронизация команд и запуск ---
-@bot.event
-async def on_ready():
-    try:
-        synced = await bot.tree.sync()
-        print(f"✅ Слэш-команды синхронизированы: {len(synced)} команд")
-    except Exception as e:
-        print(f"Ошибка при синхронизации команд: {e}")
-
+# --- Запуск Flask и Discord бота ---
 if __name__ == "__main__":
     keep_alive()
     token = Config.DISCORD_BOT_TOKEN
