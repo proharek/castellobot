@@ -1,18 +1,28 @@
 import os
+import json
+from typing import Dict
 
-class Config:
-    DISCORD_BOT_TOKEN = os.getenv("DISCORD_BOT_TOKEN")
+class LanguageManager:
+    def __init__(self):
+        self.languages: Dict[str, Dict[str, str]] = {}
+        self.default_language = "ru"
+        self.supported_languages = ["ru", "ua"]
+        self.load_languages()
 
-    DEFAULT_LANGUAGE = "ru"
-    SUPPORTED_LANGUAGES = ["ru", "ua"]
+    def load_languages(self):
+        base_path = os.path.join(os.path.dirname(__file__), "..", "languages")
+        for lang_code in self.supported_languages:
+            path = os.path.join(base_path, f"{lang_code}.json")
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        self.languages[lang_code] = json.load(f)
+                except Exception as e:
+                    print(f"[LanguageManager] Ошибка при загрузке {lang_code}.json: {e}")
+            else:
+                print(f"[LanguageManager] Файл не найден: {path}")
 
-    FUND_PERCENTAGE = 0.5
-    MAX_CONTRACTS_DISPLAY = 25
-
-    HOST = "0.0.0.0"
-    PORT = 8080
-
-    DEFAULT_REPORT_DAYS = 7
-    MAX_REPORT_DAYS = 30
-
-    REPORT_CLEANUP_DAYS = 7  # Автоочистка старых отчётов через /reportdays
+    def get_text(self, key: str, lang: str) -> str:
+        if lang not in self.languages:
+            lang = self.default_language
+        return self.languages.get(lang, {}).get(key, f"[{key}]")
