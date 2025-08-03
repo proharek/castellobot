@@ -17,6 +17,8 @@
   "participants_added": "Учасників додано до контракту **{name}**.",
   "report_saved": "✅ Звіт по контракту **{name}** збережено.",
   "report_already_saved": "⚠️ Звіт по цьому контракту вже був збережений.",
-  "report_not_found": "Звіти не знайдено."
+  "report_not_found": "Звіти не знайдено.",
+  "language_button_ru": "RU",
+  "language_button_ua": "UA",
+  "language_switch_success": "Мову змінено на **{lang}**."
 }
-
