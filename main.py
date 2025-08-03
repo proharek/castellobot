@@ -2,7 +2,7 @@ import os
 import json
 from datetime import datetime, timezone, timedelta
 from threading import Thread
-from typing import List, Optional
+from typing import List
 
 import discord
 from discord.ext import commands
@@ -15,8 +15,8 @@ from config import Config
 
 intents = discord.Intents.default()
 intents.message_content = True
-
 bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
+
 db = DatabaseManager()
 lang_manager = LanguageManager()
 
@@ -54,6 +54,8 @@ class AddParticipantsButton(discord.ui.Button):
         try:
             msg = await bot.wait_for('message', check=check, timeout=60)
             mentions = msg.mentions
+            await msg.delete()  # Удаляем сообщение с тегами
+
             if not mentions:
                 await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
                 return
@@ -105,8 +107,8 @@ class ContractSelectView(discord.ui.View):
 
 @bot.tree.command(name="language", description="🌐 Сменить язык")
 @app_commands.choices(language=[
-    app_commands.Choice(name="Русский", value="ru"),
-    app_commands.Choice(name="Українська", value="ua"),
+    app_commands.Choice(name="RU", value="ru"),
+    app_commands.Choice(name="UA", value="ua"),
 ])
 async def change_language(interaction: discord.Interaction, language: app_commands.Choice[str]):
     db.set_user_language(interaction.user.id, language.value)
@@ -202,7 +204,7 @@ async def report(interaction: discord.Interaction):
 
         view = discord.ui.View()
         view.add_item(AddParticipantsButton(contract["name"], lang))
-        await inter.response.edit_message(content=text, embed=None, view=view)
+        await inter.response.edit_message(content=text, view=view)
 
     view = ContractSelectView(contracts, lang, on_select)
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
@@ -218,9 +220,7 @@ async def send_report(interaction: discord.Interaction, contract_name: str):
 
     participants = contract["participants"]
     fund = contract["amount"] * Config.FUND_PERCENTAGE
-    per_user = 0
-    if participants:
-        per_user = (contract["amount"] - fund) / len(participants)
+    per_user = (contract["amount"] - fund) / len(participants) if participants else 0
 
     report = {
         "contract_name": contract["name"],
@@ -271,18 +271,21 @@ async def report_days(interaction: discord.Interaction, days: int = Config.DEFAU
 
 @bot.tree.command(name="info", description="ℹ️ Информация о командах")
 async def info(interaction: discord.Interaction):
-    lang = db.get_user_language(interaction.user.id)
     text = (
-        "📌 Команды бота:\n"
-        "/language - сменить язык (🇷🇺/🇺🇦)\n"
-        "/addcontract - добавить контракт\n"
-        "/editcontract - редактировать контракт (только автор)\n"
-        "/deletecontract - удалить контракт (только администратор)\n"
-        "/report - показать отчёт по контракту\n"
-        "/sendreport - сохранить отчёт в базу\n"
-        "/reportdays - сводный отчёт по отправленным отчётам\n"
-        "/info - информация о командах\n\n"
-        "В отчёте /report есть кнопка ➕ Добавить участников (временные, не сохраняются)."
+        "```"
+        "📌 Команды Castello Bot:\n"
+        "/language       — выбрать язык (RU / UA)\n"
+        "/addcontract    — добавить контракт\n"
+        "/editcontract   — редактировать контракт (только автор)\n"
+        "/deletecontract — удалить контракт (только админ)\n"
+        "/report         — выбрать контракт и посмотреть отчёт\n"
+        "/sendreport     — сохранить отчёт в базу\n"
+        "/reportdays     — итоговый отчёт по дням\n"
+        "/info           — справка о командах\n"
+        "\n"
+        "ℹ️ В отчёте /report есть кнопка '➕ Добавить участников'.\n"
+        "Участники добавляются временно и не сохраняются.\n"
+        "```"
     )
     await interaction.response.send_message(text, ephemeral=True)
 
