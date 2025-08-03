@@ -1,5 +1,5 @@
-import os
 import json
+import os
 from typing import Dict
 
 class LanguageManager:
@@ -25,4 +25,5 @@ class LanguageManager:
     def get_text(self, key: str, lang: str) -> str:
         if lang not in self.languages:
             lang = self.default_language
-        return self.languages.get(lang, {}).get(key, f"[{key}]")
+        value = self.languages.get(lang, {}).get(key)
+        return value if value else f"[{key}]"
