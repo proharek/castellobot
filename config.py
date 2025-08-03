@@ -9,7 +9,6 @@ class Config:
     FUND_PERCENTAGE = 0.5
     MAX_CONTRACTS_DISPLAY = 25
 
-    COMMAND_PREFIX = "!"
     HOST = "0.0.0.0"
     PORT = 8080
 
