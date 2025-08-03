@@ -1,69 +1,147 @@
+import sqlite3
 import json
-import os
 from datetime import datetime, timezone, timedelta
+from typing import List, Optional, Dict, Any
 
 class DatabaseManager:
-    def __init__(self):
-        self.contracts_file = "contracts_data.json"
-        self.reports_file = "reports_data.json"
-        self.users_file = "users_lang.json"
-        self._ensure_files()
+    def __init__(self, db_path: str = "database.sqlite"):
+        self.db_path = db_path
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self._create_tables()
 
-    def _ensure_files(self):
-        for file in [self.contracts_file, self.reports_file, self.users_file]:
-            if not os.path.exists(file):
-                with open(file, "w", encoding="utf-8") as f:
-                    json.dump([], f) if "reports" in file or "contracts" in file else json.dump({}, f)
+    def _create_tables(self):
+        with self.conn:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS contracts (
+                    name TEXT PRIMARY KEY,
+                    amount REAL NOT NULL
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS reports (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contract_name TEXT NOT NULL,
+                    author_id INTEGER NOT NULL,
+                    author_name TEXT NOT NULL,
+                    participants TEXT NOT NULL,
+                    amount REAL NOT NULL,
+                    fund REAL NOT NULL,
+                    per_user REAL NOT NULL,
+                    timestamp TEXT NOT NULL
+                )
+            """)
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    language TEXT DEFAULT 'ru'
+                )
+            """)
 
-    def load_json(self, path):
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+    # Загрузка контрактов из JSON-файла (для инициализации)
+    def load_contracts_from_file(self, filename: str) -> None:
+        try:
+            with open(filename, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                for contract in data:
+                    self.add_contract(contract)
+        except FileNotFoundError:
+            pass
 
-    def save_json(self, path, data):
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def get_all_contracts(self):
-        return self.load_json(self.contracts_file)
-
-    def get_contract_by_name(self, name):
-        return next((c for c in self.get_all_contracts() if c["name"] == name), None)
-
-    def add_contract(self, contract):
+    # Сохранение контрактов в JSON-файл (не обязательно, если используешь БД)
+    def save_contracts_to_file(self, filename: str) -> None:
         contracts = self.get_all_contracts()
-        contracts.append(contract)
-        self.save_json(self.contracts_file, contracts)
+        with open(filename, "w", encoding="utf-8") as f:
+            json.dump(contracts, f, ensure_ascii=False, indent=2)
 
-    def update_contract(self, updated):
-        contracts = self.get_all_contracts()
-        for i, c in enumerate(contracts):
-            if c["name"] == updated["name"]:
-                contracts[i] = updated
-                break
-        self.save_json(self.contracts_file, contracts)
+    # Добавление контракта
+    def add_contract(self, contract: Dict[str, Any]) -> None:
+        with self.conn:
+            self.conn.execute("""
+                INSERT OR REPLACE INTO contracts (name, amount)
+                VALUES (?, ?)
+            """, (contract["name"], contract["amount"]))
 
-    def delete_contract_by_name(self, name):
-        contracts = [c for c in self.get_all_contracts() if c["name"] != name]
-        self.save_json(self.contracts_file, contracts)
+    # Обновление контракта
+    def update_contract(self, contract: Dict[str, Any]) -> None:
+        with self.conn:
+            self.conn.execute("""
+                UPDATE contracts SET amount = ? WHERE name = ?
+            """, (contract["amount"], contract["name"]))
 
-    def save_report(self, report):
-        reports = self.load_json(self.reports_file)
-        if any(r["contract_name"] == report["contract_name"] for r in reports):
-            return False
-        reports.append(report)
-        self.save_json(self.reports_file, reports)
-        return True
+    # Удаление контракта по названию
+    def delete_contract_by_name(self, name: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM contracts WHERE name = ?", (name,))
 
-    def get_reports_by_days(self, days):
-        reports = self.load_json(self.reports_file)
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        return [r for r in reports if datetime.fromisoformat(r["timestamp"]) >= cutoff]
+    # Получение контракта по названию
+    def get_contract_by_name(self, name: str) -> Optional[Dict[str, Any]]:
+        cursor = self.conn.execute("SELECT * FROM contracts WHERE name = ?", (name,))
+        row = cursor.fetchone()
+        if row:
+            return dict(row)
+        return None
 
-    def get_user_language(self, user_id: int):
-        users = self.load_json(self.users_file)
-        return users.get(str(user_id), "ru")
+    # Получение всех контрактов
+    def get_all_contracts(self) -> List[Dict[str, Any]]:
+        cursor = self.conn.execute("SELECT * FROM contracts")
+        return [dict(row) for row in cursor.fetchall()]
 
-    def set_user_language(self, user_id: int, lang: str):
-        users = self.load_json(self.users_file)
-        users[str(user_id)] = lang
-        self.save_json(self.users_file, users)
+    # Сохранение отчёта
+    def save_report(self, report: Dict[str, Any]) -> None:
+        participants_json = json.dumps(report["participants"], ensure_ascii=False)
+        with self.conn:
+            self.conn.execute("""
+                INSERT INTO reports (
+                    contract_name, author_id, author_name,
+                    participants, amount, fund, per_user, timestamp
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                report["contract_name"],
+                report["author_id"],
+                report["author_name"],
+                participants_json,
+                report["amount"],
+                report["fund"],
+                report["per_user"],
+                report["timestamp"]
+            ))
+
+    # Получение отчётов за последние N дней
+    def get_reports_by_days(self, days: int) -> List[Dict[str, Any]]:
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_iso = cutoff_date.isoformat()
+        cursor = self.conn.execute("""
+            SELECT * FROM reports WHERE timestamp >= ?
+        """, (cutoff_iso,))
+        rows = cursor.fetchall()
+        reports = []
+        for row in rows:
+            report = dict(row)
+            report["participants"] = json.loads(report["participants"])
+            reports.append(report)
+        return reports
+
+    # Установка языка пользователя
+    def set_user_language(self, user_id: int, language: str) -> None:
+        with self.conn:
+            self.conn.execute("""
+                INSERT INTO users (user_id, language) VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET language=excluded.language
+            """, (user_id, language))
+
+    # Получение языка пользователя
+    def get_user_language(self, user_id: int) -> str:
+        cursor = self.conn.execute("SELECT language FROM users WHERE user_id = ?", (user_id,))
+        row = cursor.fetchone()
+        if row:
+            return row["language"]
+        return "ru"  # Язык по умолчанию
+
+    # Удаление отчётов старше N дней
+    def delete_reports_older_than(self, days: int) -> int:
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_iso = cutoff_date.isoformat()
+        with self.conn:
+            cursor = self.conn.execute("DELETE FROM reports WHERE timestamp < ?", (cutoff_iso,))
+            return cursor.rowcount
