@@ -1,139 +1,69 @@
-import os
 import json
-import sqlite3
-from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Dict
-
-CONTRACTS_FILE = "contracts_data.json"
+import os
+from datetime import datetime, timezone, timedelta
 
 class DatabaseManager:
-    def __init__(self, db_path: str = "database.db"):
-        self.db_path = db_path
-        self._connect()
-        self._create_tables()
-        self.contracts_cache = []
-        self.load_contracts_from_file()
+    def __init__(self):
+        self.contracts_file = "contracts_data.json"
+        self.reports_file = "reports_data.json"
+        self.users_file = "users_lang.json"
+        self._ensure_files()
 
-    def _connect(self):
-        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
+    def _ensure_files(self):
+        for file in [self.contracts_file, self.reports_file, self.users_file]:
+            if not os.path.exists(file):
+                with open(file, "w", encoding="utf-8") as f:
+                    json.dump([], f) if "reports" in file or "contracts" in file else json.dump({}, f)
 
-    def _create_tables(self):
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS user_languages (
-            user_id INTEGER PRIMARY KEY,
-            language TEXT
-        )
-        """)
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS reports (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            contract_name TEXT,
-            author_id INTEGER,
-            author_name TEXT,
-            participants TEXT,
-            amount REAL,
-            fund REAL,
-            per_user REAL,
-            timestamp TEXT
-        )
-        """)
-        self.conn.commit()
+    def load_json(self, path):
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
 
-    # --- Язык ---
-    def set_user_language(self, user_id: int, language: str):
-        self.cursor.execute(
-            "INSERT OR REPLACE INTO user_languages (user_id, language) VALUES (?, ?)",
-            (user_id, language)
-        )
-        self.conn.commit()
+    def save_json(self, path, data):
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
-    def get_user_language(self, user_id: int) -> str:
-        self.cursor.execute(
-            "SELECT language FROM user_languages WHERE user_id = ?",
-            (user_id,)
-        )
-        row = self.cursor.fetchone()
-        return row["language"] if row else "ru"
+    def get_all_contracts(self):
+        return self.load_json(self.contracts_file)
 
-    # --- Контракты (JSON + кэш) ---
-    def load_contracts_from_file(self):
-        if os.path.exists(CONTRACTS_FILE):
-            try:
-                with open(CONTRACTS_FILE, "r", encoding="utf-8") as f:
-                    self.contracts_cache = json.load(f)
-            except:
-                self.contracts_cache = []
-        else:
-            self.contracts_cache = []
+    def get_contract_by_name(self, name):
+        return next((c for c in self.get_all_contracts() if c["name"] == name), None)
 
-    def save_contracts_to_file(self):
-        with open(CONTRACTS_FILE, "w", encoding="utf-8") as f:
-            json.dump(self.contracts_cache, f, ensure_ascii=False, indent=2)
+    def add_contract(self, contract):
+        contracts = self.get_all_contracts()
+        contracts.append(contract)
+        self.save_json(self.contracts_file, contracts)
 
-    def add_contract(self, contract: dict):
-        self.contracts_cache.append(contract)
-        self.save_contracts_to_file()
-
-    def update_contract(self, updated: dict):
-        for i, c in enumerate(self.contracts_cache):
+    def update_contract(self, updated):
+        contracts = self.get_all_contracts()
+        for i, c in enumerate(contracts):
             if c["name"] == updated["name"]:
-                self.contracts_cache[i] = updated
+                contracts[i] = updated
                 break
-        self.save_contracts_to_file()
+        self.save_json(self.contracts_file, contracts)
 
-    def delete_contract_by_name(self, name: str):
-        self.contracts_cache = [c for c in self.contracts_cache if c["name"] != name]
-        self.save_contracts_to_file()
+    def delete_contract_by_name(self, name):
+        contracts = [c for c in self.get_all_contracts() if c["name"] != name]
+        self.save_json(self.contracts_file, contracts)
 
-    def get_all_contracts(self) -> List[dict]:
-        return self.contracts_cache
+    def save_report(self, report):
+        reports = self.load_json(self.reports_file)
+        if any(r["contract_name"] == report["contract_name"] for r in reports):
+            return False
+        reports.append(report)
+        self.save_json(self.reports_file, reports)
+        return True
 
-    def get_contract_by_name(self, name: str) -> Optional[dict]:
-        for c in self.contracts_cache:
-            if c["name"] == name:
-                return c
-        return None
-
-    # --- Отчёты (SQLite) ---
-    def save_report(self, report: dict):
-        self.cursor.execute("""
-        INSERT INTO reports (
-            contract_name, author_id, author_name,
-            participants, amount, fund, per_user, timestamp
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            report["contract_name"],
-            report["author_id"],
-            report["author_name"],
-            ",".join(report["participants"]),
-            report["amount"],
-            report["fund"],
-            report["per_user"],
-            report["timestamp"]
-        ))
-        self.conn.commit()
-
-    def get_reports_by_days(self, days: int) -> List[dict]:
+    def get_reports_by_days(self, days):
+        reports = self.load_json(self.reports_file)
         cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        self.cursor.execute("SELECT * FROM reports WHERE timestamp >= ?", (cutoff.isoformat(),))
-        rows = self.cursor.fetchall()
-        return [self._row_to_report(row) for row in rows]
+        return [r for r in reports if datetime.fromisoformat(r["timestamp"]) >= cutoff]
 
-    def delete_reports_older_than(self, days: int):
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-        self.cursor.execute("DELETE FROM reports WHERE timestamp < ?", (cutoff.isoformat(),))
-        self.conn.commit()
+    def get_user_language(self, user_id: int):
+        users = self.load_json(self.users_file)
+        return users.get(str(user_id), "ru")
 
-    def _row_to_report(self, row: sqlite3.Row) -> dict:
-        return {
-            "contract_name": row["contract_name"],
-            "author_id": row["author_id"],
-            "author_name": row["author_name"],
-            "participants": row["participants"].split(",") if row["participants"] else [],
-            "amount": row["amount"],
-            "fund": row["fund"],
-            "per_user": row["per_user"],
-            "timestamp": row["timestamp"]
-        }
+    def set_user_language(self, user_id: int, lang: str):
+        users = self.load_json(self.users_file)
+        users[str(user_id)] = lang
+        self.save_json(self.users_file, users)
