@@ -20,5 +20,9 @@
   "report_not_found": "Звіти не знайдено.",
   "language_button_ru": "RU",
   "language_button_ua": "UA",
-  "language_switch_success": "Мову змінено на **{lang}**."
+  "language_switch_success": "Мову змінено на **{lang}**.",
+  "cleanreports_success": "✅ Звіти старші за {days} днів успішно видалено.",
+  "cleanreports_no_permission": "❌ У вас немає прав для очищення звітів.",
+  "cleanreports_no_old_reports": "ℹ️ Немає звітів старших за {days} днів для видалення."
 }
+
