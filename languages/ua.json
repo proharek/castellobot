@@ -1,6 +1,6 @@
 {
-  "language_set_ru": "Обрано мову RU.",
-  "language_set_ua": "Обрано мову UA.",
+  "language_set_ru": "Обрано російську мову.",
+  "language_set_ua": "Обрано українську мову.",
   "select_language": "Оберіть мову:",
   "contract_added": "Контракт **{name}** на суму **{amount} USD** додано.",
   "invalid_amount": "Сума повинна бути додатнім числом.",
@@ -19,3 +19,4 @@
   "report_already_saved": "⚠️ Звіт по цьому контракту вже був збережений.",
   "report_not_found": "Звіти не знайдено."
 }
+
