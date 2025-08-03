@@ -20,5 +20,8 @@
   "report_not_found": "Отчёты не найдены.",
   "language_button_ru": "RU",
   "language_button_ua": "UA",
-  "language_switch_success": "Язык успешно изменён на **{lang}**."
+  "language_switch_success": "Язык успешно изменён на **{lang}**.",
+  "cleanreports_success": "✅ Отчёты старше {days} дней успешно удалены.",
+  "cleanreports_no_permission": "❌ У вас нет прав для очистки отчётов.",
+  "cleanreports_no_old_reports": "ℹ️ Нет отчётов старше {days} дней для удаления."
 }
