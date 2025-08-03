@@ -1,5 +1,7 @@
 import os
 import json
+from dotenv import load_dotenv
+load_dotenv()
 from datetime import datetime, timezone, timedelta
 from threading import Thread
 from typing import List
