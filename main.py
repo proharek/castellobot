@@ -22,7 +22,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 db = DatabaseManager()
 lang_manager = LanguageManager()
 
-# --- Flask для Render / UptimeRobot ---
+# --- Flask для Render ---
 app = Flask('')
 
 @app.route('/')
@@ -38,8 +38,7 @@ def run_flask():
 
 def keep_alive():
     Thread(target=run_flask, daemon=True).start()
-    # --- main.py (часть 2) ---
-
+# --- Кнопка для временного добавления участников ---
 class AddParticipantsButton(discord.ui.Button):
     def __init__(self, contract_name: str, lang: str):
         super().__init__(label="➕ Добавить участников", style=discord.ButtonStyle.primary)
@@ -56,14 +55,9 @@ class AddParticipantsButton(discord.ui.Button):
             return m.author == interaction.user and m.channel == interaction.channel
 
         try:
-            msg = await bot.wait_for('message', check=check, timeout=60)
+            msg = await bot.wait_for("message", check=check, timeout=60)
             mentions = msg.mentions
-
-            # Удаляем сообщение пользователя с тегами
-            try:
-                await msg.delete()
-            except:
-                pass
+            await msg.delete()
 
             if not mentions:
                 await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
@@ -76,13 +70,10 @@ class AddParticipantsButton(discord.ui.Button):
 
             temp_participants = [f"@{u.display_name}" for u in mentions]
             participants_text = "\n".join(f"• {p}" for p in temp_participants)
-
             fund = contract["amount"] * Config.FUND_PERCENTAGE
-            per_user = 0
-            if temp_participants:
-                per_user = (contract["amount"] - fund) / len(temp_participants)
+            per_user = (contract["amount"] - fund) / len(temp_participants)
 
-            text = lang_manager.get_text("report_template", self.lang).format(
+            report_text = lang_manager.get_text("report_template", self.lang).format(
                 name=contract["name"],
                 amount=contract["amount"],
                 leader=contract["author_name"],
@@ -91,10 +82,8 @@ class AddParticipantsButton(discord.ui.Button):
                 per_user=f"{per_user:.2f}"
             )
 
-            # Отправка отчёта в канал
-            await interaction.channel.send(text)
+            await interaction.channel.send(report_text)
 
-            # Автоматическое сохранение отчёта
             report = {
                 "contract_name": contract["name"],
                 "author_id": contract["author_id"],
@@ -107,12 +96,12 @@ class AddParticipantsButton(discord.ui.Button):
             }
             db.save_report(report)
 
-            await interaction.followup.send(lang_manager.get_text("participants_added", self.lang).format(name=contract["name"]), ephemeral=True)
+            await interaction.followup.send(lang_manager.get_text("report_saved", self.lang).format(name=contract["name"]), ephemeral=True)
 
         except Exception:
             await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
-# --- main.py (часть 3) ---
 
+# --- View для выбора контракта ---
 class ContractSelect(discord.ui.Select):
     def __init__(self, contracts: List[dict], lang: str, callback):
         options = [
@@ -130,7 +119,6 @@ class ContractSelectView(discord.ui.View):
     def __init__(self, contracts: List[dict], lang: str, callback):
         super().__init__(timeout=120)
         self.add_item(ContractSelect(contracts, lang, callback))
-
 # --- Команда /addcontract ---
 @bot.tree.command(name="addcontract", description="➕ Добавить контракт")
 @app_commands.describe(name="Название контракта", amount="Сумма контракта")
@@ -226,40 +214,6 @@ async def report(interaction: discord.Interaction):
 
     view = ContractSelectView(contracts, lang, on_select)
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
-# --- Команда /reportdays ---
-@bot.tree.command(name="reportdays", description="📅 Отчёт за последние дни")
-@app_commands.describe(days="Количество дней для отчёта (максимум 30)")
-async def report_days(interaction: discord.Interaction, days: int = Config.DEFAULT_REPORT_DAYS):
-    lang = db.get_user_language(interaction.user.id)
-    if days <= 0 or days > Config.MAX_REPORT_DAYS:
-        await interaction.response.send_message(f"❌ Введите число от 1 до {Config.MAX_REPORT_DAYS}.", ephemeral=True)
-        return
-
-    reports = db.get_reports_by_days(days)
-    if not reports:
-        await interaction.response.send_message(lang_manager.get_text("report_not_found", lang), ephemeral=True)
-        return
-
-    total_amount = sum(r["amount"] for r in reports)
-    total_fund = sum(r["fund"] for r in reports)
-    total_payout = sum(r["per_user"] * len(r["participants"]) for r in reports)
-
-    earnings = {}
-    for r in reports:
-        for p in r["participants"]:
-            earnings[p] = earnings.get(p, 0) + r["per_user"]
-
-    earnings_text = "\n".join(f"• {user}: {amount:.2f} USD" for user, amount in earnings.items())
-
-    text = lang_manager.get_text("report_days_summary", lang).format(
-        days=days,
-        total=total_amount,
-        fund=total_fund,
-        payout=total_payout,
-        earnings=earnings_text
-    )
-    await interaction.response.send_message(text, ephemeral=True)
-
 # --- Команда /info ---
 @bot.tree.command(name="info", description="ℹ️ Информация о командах")
 async def info(interaction: discord.Interaction):
@@ -271,79 +225,22 @@ async def info(interaction: discord.Interaction):
         "/editcontract — Редактировать контракт (только автор)\n"
         "/deletecontract — Удалить контракт (только админ)\n"
         "/report — Показать отчёт по контракту\n"
-        "/reportdays — Сводка за последние дни\n"
+        "/reportdays — Сводка за последние дни (админы)\n"
         "/info — Информация о командах\n\n"
-        "В отчёте доступна кнопка ➕ Добавить участников (временно, без сохранения).\n"
-        "После добавления отчёт автоматически сохраняется в базу."
+        "📎 В отчёте доступна кнопка ➕ Добавить участников (временно, без сохранения).\n"
+        "📦 После добавления участников отчёт сохраняется автоматически в базу."
     )
     await interaction.response.send_message(text, ephemeral=True)
 
-# --- Обновление кнопки AddParticipantsButton для удаления сообщения и автосохранения отчёта ---
-class AddParticipantsButton(discord.ui.Button):
-    def __init__(self, contract_name: str, lang: str):
-        super().__init__(label="➕ Добавить участников", style=discord.ButtonStyle.primary)
-        self.contract_name = contract_name
-        self.lang = lang
+# --- Синхронизация команд и запуск ---
+@bot.event
+async def on_ready():
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Слэш-команды синхронизированы: {len(synced)} команд")
+    except Exception as e:
+        print(f"Ошибка при синхронизации команд: {e}")
 
-    async def callback(self, interaction: discord.Interaction):
-        await interaction.response.send_message(
-            lang_manager.get_text("edit_participants_prompt", self.lang),
-            ephemeral=True
-        )
-
-        def check(m: discord.Message):
-            return m.author == interaction.user and m.channel == interaction.channel
-
-        try:
-            msg = await bot.wait_for("message", check=check, timeout=60)
-            mentions = msg.mentions
-            await msg.delete()
-
-            if not mentions:
-                await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
-                return
-
-            contract = db.get_contract_by_name(self.contract_name)
-            if not contract:
-                await interaction.followup.send(lang_manager.get_text("contract_not_found", self.lang), ephemeral=True)
-                return
-
-            temp_participants = [f"@{u.display_name}" for u in mentions]
-            participants_text = "\n".join(f"• {p}" for p in temp_participants)
-            fund = contract["amount"] * Config.FUND_PERCENTAGE
-            per_user = (contract["amount"] - fund) / len(temp_participants)
-
-            report_text = lang_manager.get_text("report_template", self.lang).format(
-                name=contract["name"],
-                amount=contract["amount"],
-                leader=contract["author_name"],
-                participants=participants_text,
-                fund=f"{fund:.2f}",
-                per_user=f"{per_user:.2f}"
-            )
-
-            # Отправка отчёта в канал (для всех)
-            await interaction.channel.send(report_text)
-
-            # Автосохранение в базу
-            report = {
-                "contract_name": contract["name"],
-                "author_id": contract["author_id"],
-                "author_name": contract["author_name"],
-                "participants": temp_participants,
-                "amount": contract["amount"],
-                "fund": fund,
-                "per_user": per_user,
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            }
-            db.save_report(report)
-
-            await interaction.followup.send(lang_manager.get_text("report_saved", self.lang).format(name=contract["name"]), ephemeral=True)
-
-        except Exception:
-            await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
-
-# --- Запуск Flask и Discord бота ---
 if __name__ == "__main__":
     keep_alive()
     token = Config.DISCORD_BOT_TOKEN
