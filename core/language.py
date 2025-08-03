@@ -15,7 +15,7 @@ class LanguageManager:
             path = os.path.join(base_path, f"{lang_code}.json")
             if os.path.exists(path):
                 try:
-                    with open(path, 'r', encoding='utf-8') as f:
+                    with open(path, "r", encoding="utf-8") as f:
                         self.languages[lang_code] = json.load(f)
                 except Exception as e:
                     print(f"[LanguageManager] Ошибка при загрузке {lang_code}.json: {e}")
@@ -25,7 +25,7 @@ class LanguageManager:
     def get_text(self, key: str, lang: str) -> str:
         if lang not in self.languages:
             lang = self.default_language
-        value = self.languages.get(lang, {}).get(key)
-        if value is not None:
-            return value
-        return self.languages.get(self.default_language, {}).get(key, f"[{key}]")
+        return self.languages.get(lang, {}).get(
+            key,
+            self.languages.get(self.default_language, {}).get(key, f"[{key}]")
+        )
