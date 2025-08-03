@@ -1,114 +1,139 @@
 import os
 import json
-from datetime import datetime, timedelta
+import sqlite3
+from datetime import datetime, timedelta, timezone
+from typing import List, Optional, Dict
+
+CONTRACTS_FILE = "contracts_data.json"
 
 class DatabaseManager:
-    def __init__(self):
-        self.contracts_file = "contracts_data.json"
-        self.reports_file = "reports_data.json"
-        self.languages_file = "user_languages.json"
-
-        self.contracts = []
-        self.reports = []
-        self.user_languages = {}
-
-        self.load_all()
-
-    def load_all(self):
+    def __init__(self, db_path: str = "database.db"):
+        self.db_path = db_path
+        self._connect()
+        self._create_tables()
+        self.contracts_cache = []
         self.load_contracts_from_file()
-        self.load_reports_from_file()
-        self.load_user_languages()
 
-    # --- Контракты ---
+    def _connect(self):
+        self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
+        self.cursor = self.conn.cursor()
 
+    def _create_tables(self):
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS user_languages (
+            user_id INTEGER PRIMARY KEY,
+            language TEXT
+        )
+        """)
+        self.cursor.execute("""
+        CREATE TABLE IF NOT EXISTS reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            contract_name TEXT,
+            author_id INTEGER,
+            author_name TEXT,
+            participants TEXT,
+            amount REAL,
+            fund REAL,
+            per_user REAL,
+            timestamp TEXT
+        )
+        """)
+        self.conn.commit()
+
+    # --- Язык ---
+    def set_user_language(self, user_id: int, language: str):
+        self.cursor.execute(
+            "INSERT OR REPLACE INTO user_languages (user_id, language) VALUES (?, ?)",
+            (user_id, language)
+        )
+        self.conn.commit()
+
+    def get_user_language(self, user_id: int) -> str:
+        self.cursor.execute(
+            "SELECT language FROM user_languages WHERE user_id = ?",
+            (user_id,)
+        )
+        row = self.cursor.fetchone()
+        return row["language"] if row else "ru"
+
+    # --- Контракты (JSON + кэш) ---
     def load_contracts_from_file(self):
-        if os.path.exists(self.contracts_file):
-            with open(self.contracts_file, "r", encoding="utf-8") as f:
-                self.contracts = json.load(f)
+        if os.path.exists(CONTRACTS_FILE):
+            try:
+                with open(CONTRACTS_FILE, "r", encoding="utf-8") as f:
+                    self.contracts_cache = json.load(f)
+            except:
+                self.contracts_cache = []
         else:
-            self.contracts = []
+            self.contracts_cache = []
 
     def save_contracts_to_file(self):
-        with open(self.contracts_file, "w", encoding="utf-8") as f:
-            json.dump(self.contracts, f, ensure_ascii=False, indent=2)
+        with open(CONTRACTS_FILE, "w", encoding="utf-8") as f:
+            json.dump(self.contracts_cache, f, ensure_ascii=False, indent=2)
 
     def add_contract(self, contract: dict):
-        self.contracts.append(contract)
+        self.contracts_cache.append(contract)
         self.save_contracts_to_file()
 
-    def update_contract(self, contract: dict):
-        for i, c in enumerate(self.contracts):
-            if c["name"] == contract["name"]:
-                self.contracts[i] = contract
+    def update_contract(self, updated: dict):
+        for i, c in enumerate(self.contracts_cache):
+            if c["name"] == updated["name"]:
+                self.contracts_cache[i] = updated
                 break
         self.save_contracts_to_file()
 
     def delete_contract_by_name(self, name: str):
-        self.contracts = [c for c in self.contracts if c["name"] != name]
+        self.contracts_cache = [c for c in self.contracts_cache if c["name"] != name]
         self.save_contracts_to_file()
 
-    def get_all_contracts(self):
-        return self.contracts
+    def get_all_contracts(self) -> List[dict]:
+        return self.contracts_cache
 
-    def get_contract_by_name(self, name: str):
-        return next((c for c in self.contracts if c["name"] == name), None)
+    def get_contract_by_name(self, name: str) -> Optional[dict]:
+        for c in self.contracts_cache:
+            if c["name"] == name:
+                return c
+        return None
 
-    # --- Отчёты ---
-
-    def load_reports_from_file(self):
-        if os.path.exists(self.reports_file):
-            with open(self.reports_file, "r", encoding="utf-8") as f:
-                self.reports = json.load(f)
-        else:
-            self.reports = []
-
-    def save_reports_to_file(self):
-        with open(self.reports_file, "w", encoding="utf-8") as f:
-            json.dump(self.reports, f, ensure_ascii=False, indent=2)
-
+    # --- Отчёты (SQLite) ---
     def save_report(self, report: dict):
-        # Проверка: не дублировать один и тот же отчёт
-        for r in self.reports:
-            if r["contract_name"] == report["contract_name"]:
-                return False  # Уже есть
-        self.reports.append(report)
-        self.save_reports_to_file()
-        return True
+        self.cursor.execute("""
+        INSERT INTO reports (
+            contract_name, author_id, author_name,
+            participants, amount, fund, per_user, timestamp
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            report["contract_name"],
+            report["author_id"],
+            report["author_name"],
+            ",".join(report["participants"]),
+            report["amount"],
+            report["fund"],
+            report["per_user"],
+            report["timestamp"]
+        ))
+        self.conn.commit()
 
-    def get_reports_by_days(self, days: int):
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        return [
-            r for r in self.reports
-            if datetime.fromisoformat(r["timestamp"]).replace(tzinfo=None) >= cutoff
-        ]
+    def get_reports_by_days(self, days: int) -> List[dict]:
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        self.cursor.execute("SELECT * FROM reports WHERE timestamp >= ?", (cutoff.isoformat(),))
+        rows = self.cursor.fetchall()
+        return [self._row_to_report(row) for row in rows]
 
-    def clean_old_reports(self, days: int = 7) -> int:
-        """Удалить из базы отчёты старше N дней. Вернуть количество удалённых."""
-        cutoff = datetime.utcnow() - timedelta(days=days)
-        before = len(self.reports)
-        self.reports = [
-            r for r in self.reports
-            if datetime.fromisoformat(r["timestamp"]).replace(tzinfo=None) >= cutoff
-        ]
-        self.save_reports_to_file()
-        return before - len(self.reports)
+    def delete_reports_older_than(self, days: int):
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        self.cursor.execute("DELETE FROM reports WHERE timestamp < ?", (cutoff.isoformat(),))
+        self.conn.commit()
 
-    # --- Язык пользователя ---
-
-    def load_user_languages(self):
-        if os.path.exists(self.languages_file):
-            with open(self.languages_file, "r", encoding="utf-8") as f:
-                self.user_languages = json.load(f)
-        else:
-            self.user_languages = {}
-
-    def save_user_languages(self):
-        with open(self.languages_file, "w", encoding="utf-8") as f:
-            json.dump(self.user_languages, f, ensure_ascii=False, indent=2)
-
-    def set_user_language(self, user_id: int, language: str):
-        self.user_languages[str(user_id)] = language
-        self.save_user_languages()
-
-    def get_user_language(self, user_id: int):
-        return self.user_languages.get(str(user_id), "ru")
+    def _row_to_report(self, row: sqlite3.Row) -> dict:
+        return {
+            "contract_name": row["contract_name"],
+            "author_id": row["author_id"],
+            "author_name": row["author_name"],
+            "participants": row["participants"].split(",") if row["participants"] else [],
+            "amount": row["amount"],
+            "fund": row["fund"],
+            "per_user": row["per_user"],
+            "timestamp": row["timestamp"]
+        }
