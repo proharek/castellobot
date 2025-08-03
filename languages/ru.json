@@ -1,6 +1,6 @@
 {
-  "language_set_ru": "Выбран язык RU.",
-  "language_set_ua": "Выбран язык UA.",
+  "language_set_ru": "Выбран русский язык.",
+  "language_set_ua": "Выбран украинский язык.",
   "select_language": "Выберите язык:",
   "contract_added": "Контракт **{name}** на сумму **{amount} USD** добавлен.",
   "invalid_amount": "Сумма должна быть положительным числом.",
