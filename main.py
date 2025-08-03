@@ -25,6 +25,35 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 db = DatabaseManager()
 lang_manager = LanguageManager()
 
+# --- Функция загрузки контрактов из JSON ---
+def load_contracts_from_json(filepath="contracts.json"):
+    if not os.path.exists(filepath):
+        print(f"⚠️ JSON файл {filepath} не найден, пропускаем импорт контрактов.")
+        return
+    with open(filepath, "r", encoding="utf-8") as f:
+        contracts = json.load(f)
+
+    count_imported = 0
+    for c in contracts:
+        name = c.get("name")
+        amount = c.get("sum")  # в JSON — sum, в базе — amount
+        if not name or not amount:
+            continue
+        if db.get_contract_by_name(name) is None:
+            contract = {
+                "name": name,
+                "amount": amount,
+                "author_id": 0,              # 0 — системный автор
+                "author_name": "system",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            db.add_contract(contract)
+            count_imported += 1
+    print(f"📥 Импортировано {count_imported} контрактов из {filepath}")
+
+# Загрузка контрактов из JSON при старте
+load_contracts_from_json()
+
 # --- Flask для Render / UptimeRobot ---
 app = Flask('')
 
@@ -145,6 +174,7 @@ async def add_contract(interaction: discord.Interaction, name: str, amount: floa
 
     db.add_contract(contract)
     await interaction.response.send_message(lang_manager.get_text("contract_added", lang).format(name=name, amount=amount))
+
 # --- Команда /editcontract ---
 @bot.tree.command(name="editcontract", description="✏️ Редактировать контракт")
 @app_commands.describe(name="Название контракта", amount="Новая сумма")
@@ -315,3 +345,4 @@ if __name__ == "__main__":
         print("❌ DISCORD_BOT_TOKEN не установлен.")
         exit(1)
     bot.run(token)
+
