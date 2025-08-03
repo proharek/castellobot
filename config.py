@@ -22,5 +22,5 @@ class Config:
     DEFAULT_REPORT_DAYS = 7
     MAX_REPORT_DAYS = 30
 
-    # Сколько дней хранить отчёты (используется при /reportdays)
+    # Автоочистка старых отчётов (например, для команды /cleanreports)
     REPORT_CLEANUP_DAYS = 7
