@@ -12,8 +12,8 @@
   "edit_participants_prompt": "Укажите участников через @тег (через пробел):",
   "participants_empty": "❌ Не удалось определить участников.",
 
-  "report_template": "💰 Сумма контракта: {amount} USD\n👤 Старший группы: {leader}\n👥 Участники:\n{participants}\n🏦 В фонд семьи: {fund} USD (50%)\n💸 Каждому участнику: {per_user} USD",
-  "report_saved": "✅ Отчёт по контракту **{name}** сохранён.",
+  "report_template": "📄 **Отчет по контракту \"{name}\"**\n💰 Сума: {amount} USD\n👤 Старший группы: {leader}\n👥 Участники:\n{participants}\n🏦 В фонд: {fund} USD (50%)\n💸 Каждому: {per_user} USD",
+  "report_saved": "✅ Отчет по контракту **{name}** сохранён.",
   "report_not_found": "❌ Отчёты не найдены за указанный период.",
 
   "report_days_summary": "📊 Отчёты за {days} дней:\n\n💰 Общая сумма: {total} USD\n🏦 В фонд: {fund} USD\n💸 Выплаты участникам: {payout} USD\n\n👥 Доходы по участникам:\n{earnings}",
