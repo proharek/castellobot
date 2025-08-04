@@ -66,7 +66,10 @@ class AddParticipantsButton(discord.ui.Button):
         try:
             msg = await bot.wait_for("message", check=check, timeout=60)
             mentions = msg.mentions
-            await msg.delete()
+            try:
+                await msg.delete()
+            except discord.Forbidden:
+                pass
 
             if not mentions:
                 await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
@@ -77,14 +80,15 @@ class AddParticipantsButton(discord.ui.Button):
                 await interaction.followup.send(lang_manager.get_text("contract_not_found", self.lang), ephemeral=True)
                 return
 
-            # Назначение текущего пользователя как старшего, если контракт из JSON
             author_id = interaction.user.id
             author_name = interaction.user.display_name
 
-            temp_participants = [f"@{u.display_name}" for u in mentions]
-            participants_text = "\n".join(f"• {p}" for p in temp_participants)
+            # Участники без "@"
+            participant_names = [u.display_name for u in mentions]
+            participants_text = "\n".join(f"• {name}" for name in participant_names)
+
             fund = contract["amount"] * Config.FUND_PERCENTAGE
-            per_user = (contract["amount"] - fund) / len(temp_participants)
+            per_user = (contract["amount"] - fund) / len(participant_names)
 
             report_text = lang_manager.get_text("report_template", self.lang).format(
                 name=contract["name"],
@@ -101,7 +105,7 @@ class AddParticipantsButton(discord.ui.Button):
                 "contract_name": contract["name"],
                 "author_id": author_id,
                 "author_name": author_name,
-                "participants": temp_participants,
+                "participants": participant_names,
                 "amount": contract["amount"],
                 "fund": fund,
                 "per_user": per_user,
@@ -153,7 +157,6 @@ async def report(interaction: discord.Interaction):
 
         fund = contract["amount"] * Config.FUND_PERCENTAGE
         per_user = 0
-
         author_name = inter.user.display_name
 
         text = lang_manager.get_text("report_template", lang).format(
