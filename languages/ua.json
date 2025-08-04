@@ -6,17 +6,17 @@
   "language_set_ua": "✅ Мову встановлено: Українська",
 
   "no_contracts_found": "❌ Контракти не знайдено.",
-  "select_contract": "Оберіть контракт зі списку",
+  "select_contract": "Оберіть контракт із списку",
   "contract_not_found": "❌ Контракт не знайдено.",
 
   "edit_participants_prompt": "Вкажіть учасників через @тег (через пробіл):",
   "participants_empty": "❌ Не вдалося визначити учасників.",
 
-  "report_template": "💰 Сума контракту: {amount} USD\n👤 Старший групи: {leader}\n👥 Учасники:\n{participants}\n🏦 У сімейний фонд: {fund} USD (50%)\n💸 Кожному учаснику: {per_user} USD",
-  "report_saved": "✅ Звіт по контракту **{name}** збережено.",
+  "report_template": "📄 **Отчет по контракту \"{name}\"**\n💰 Сума: {amount} USD\n👤 Старший групи: {leader}\n👥 Учасники:\n{participants}\n🏦 У фонд: {fund} USD (50%)\n💸 Кожному: {per_user} USD",
+  "report_saved": "✅ Звіт за контрактом **{name}** збережено.",
   "report_not_found": "❌ Звіти не знайдено за вказаний період.",
 
-  "report_days_summary": "📊 Звіти за {days} днів:\n\n💰 Загальна сума: {total} USD\n🏦 У фонд: {fund} USD\n💸 Виплати учасникам: {payout} USD\n\n👥 Доходи по учасниках:\n{earnings}",
+  "report_days_summary": "📊 Звіти за {days} днів:\n\n💰 Загальна сума: {total} USD\n🏦 У фонд: {fund} USD\n💸 Виплати учасникам: {payout} USD\n\n👥 Доходи за учасниками:\n{earnings}",
 
   "no_permission": "❌ У вас немає прав для цієї команди."
 }
