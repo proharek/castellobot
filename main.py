@@ -25,12 +25,12 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 db = DatabaseManager()
 lang_manager = LanguageManager()
 
-# Загрузка контрактов из JSON при старте
+# Загрузка контрактов из JSON
 CONTRACTS_JSON = "contracts.json"
 if os.path.exists(CONTRACTS_JSON):
     db.load_contracts_from_file(CONTRACTS_JSON)
 
-# --- Flask для Render / UptimeRobot ---
+# --- Flask для UptimeRobot ---
 app = Flask('')
 
 @app.route('/')
@@ -47,7 +47,7 @@ def run_flask():
 def keep_alive():
     Thread(target=run_flask, daemon=True).start()
 
-# --- UI кнопка для добавления участников ---
+# --- Кнопка "Добавить участников" ---
 class AddParticipantsButton(discord.ui.Button):
     def __init__(self, contract_name: str, lang: str):
         super().__init__(label="➕ Добавить участников", style=discord.ButtonStyle.primary)
@@ -77,10 +77,9 @@ class AddParticipantsButton(discord.ui.Button):
                 await interaction.followup.send(lang_manager.get_text("contract_not_found", self.lang), ephemeral=True)
                 return
 
-            # Автоназначение автора, если его не было
-            if contract.get("author_id") in (None, 0):
-                contract["author_id"] = interaction.user.id
-                contract["author_name"] = interaction.user.display_name
+            # Назначение текущего пользователя как старшего, если контракт из JSON
+            author_id = interaction.user.id
+            author_name = interaction.user.display_name
 
             temp_participants = [f"@{u.display_name}" for u in mentions]
             participants_text = "\n".join(f"• {p}" for p in temp_participants)
@@ -90,7 +89,7 @@ class AddParticipantsButton(discord.ui.Button):
             report_text = lang_manager.get_text("report_template", self.lang).format(
                 name=contract["name"],
                 amount=contract["amount"],
-                leader=contract["author_name"],
+                leader=author_name,
                 participants=participants_text,
                 fund=f"{fund:.2f}",
                 per_user=f"{per_user:.2f}"
@@ -100,8 +99,8 @@ class AddParticipantsButton(discord.ui.Button):
 
             report = {
                 "contract_name": contract["name"],
-                "author_id": contract["author_id"],
-                "author_name": contract["author_name"],
+                "author_id": author_id,
+                "author_name": author_name,
                 "participants": temp_participants,
                 "amount": contract["amount"],
                 "fund": fund,
@@ -118,7 +117,7 @@ class AddParticipantsButton(discord.ui.Button):
         except Exception:
             await interaction.followup.send(lang_manager.get_text("participants_empty", self.lang), ephemeral=True)
 
-# --- Select для выбора контракта ---
+# --- Select контракта ---
 class ContractSelect(discord.ui.Select):
     def __init__(self, contracts: List[dict], lang: str, callback):
         options = [
@@ -152,20 +151,16 @@ async def report(interaction: discord.Interaction):
             await inter.response.send_message(lang_manager.get_text("contract_not_found", lang), ephemeral=True)
             return
 
-        # Назначаем автора, если отсутствует
-        if contract.get("author_id") in (None, 0):
-            contract["author_id"] = inter.user.id
-            contract["author_name"] = inter.user.display_name
-
         fund = contract["amount"] * Config.FUND_PERCENTAGE
         per_user = 0
-        participants_text = "-"
+
+        author_name = inter.user.display_name
 
         text = lang_manager.get_text("report_template", lang).format(
             name=contract["name"],
             amount=contract["amount"],
-            leader=contract["author_name"],
-            participants=participants_text,
+            leader=author_name,
+            participants="-",
             fund=f"{fund:.2f}",
             per_user=f"{per_user:.2f}"
         )
@@ -176,6 +171,7 @@ async def report(interaction: discord.Interaction):
 
     view = ContractSelectView(contracts, lang, on_select)
     await interaction.response.send_message(lang_manager.get_text("select_contract", lang), view=view, ephemeral=True)
+
 # --- Команда /reportdays ---
 @bot.tree.command(name="reportdays", description="📅 Отчёт за последние дни (только для админов)")
 @app_commands.describe(days="Количество дней для отчёта (максимум 30)")
@@ -256,14 +252,14 @@ async def info(interaction: discord.Interaction):
         "/language — Сменить язык (RU / UA)\n"
         "/report — Показать отчёт по контракту\n"
         "/reportdays — Сводка за последние дни (только админ)\n"
-        "/cleanreports — Удалить отчёты старше N дней (только админ)\n"
+        "/cleanreports — Удалить старые отчёты (только админ)\n"
         "/info — Информация о командах\n\n"
-        "В отчёте доступна кнопка ➕ Добавить участников (временно, без сохранения).\n"
-        "После добавления отчёт автоматически сохраняется в базу."
+        "В отчёте есть кнопка ➕ Добавить участников.\n"
+        "После добавления отчёт сохраняется в базу."
     )
     await interaction.response.send_message(text, ephemeral=True)
 
-# --- Запуск Flask и Discord бота ---
+# --- Запуск ---
 if __name__ == "__main__":
     keep_alive()
     token = Config.DISCORD_BOT_TOKEN
