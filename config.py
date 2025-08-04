@@ -22,5 +22,8 @@ class Config:
     DEFAULT_REPORT_DAYS = 7
     MAX_REPORT_DAYS = 30
 
-    # Автоочистка старых отчётов (например, для команды /cleanreports)
+    # Очистка старых отчётов по команде /cleanreports
     REPORT_CLEANUP_DAYS = 7
+
+    # Путь к JSON-файлу с системными контрактами
+    CONTRACTS_JSON_PATH = "contracts.json"
