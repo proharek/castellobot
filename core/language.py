@@ -9,7 +9,8 @@ class LanguageManager:
         self.supported_languages = ["ru", "ua"]
         self.load_languages()
 
-    def load_languages(self):
+    def load_languages(self) -> None:
+        """Завантажує всі доступні мовні файли з папки /languages"""
         base_path = os.path.join(os.path.dirname(__file__), "..", "languages")
         for lang_code in self.supported_languages:
             path = os.path.join(base_path, f"{lang_code}.json")
@@ -23,6 +24,7 @@ class LanguageManager:
                 print(f"[LanguageManager] ⚠️ Файл не знайдено: {path}")
 
     def get_text(self, key: str, lang: str) -> str:
+        """Повертає текстовий рядок для ключа `key` мовою `lang` або fallback на 'ru'"""
         if lang not in self.languages:
             lang = self.default_language
         text = self.languages.get(lang, {}).get(key)
@@ -30,4 +32,3 @@ class LanguageManager:
             print(f"[LanguageManager] ⚠️ Ключ «{key}» не знайдено для мови «{lang}»")
             return f"[{key}]"
         return text
-
