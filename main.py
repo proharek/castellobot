@@ -259,7 +259,11 @@ async def info(interaction: discord.Interaction):
     )
     await interaction.response.send_message(text, ephemeral=True)
 
-# --- Запуск ---
+@bot.event
+async def on_ready():
+    await bot.tree.sync()
+    print(f"✅ Бот запущен как {bot.user}")
+
 if __name__ == "__main__":
     keep_alive()
     token = Config.DISCORD_BOT_TOKEN
