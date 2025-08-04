@@ -18,15 +18,16 @@ class LanguageManager:
                     with open(path, "r", encoding="utf-8") as f:
                         self.languages[lang_code] = json.load(f)
                 except Exception as e:
-                    print(f"[LanguageManager] ❌ Ошибка при загрузке {lang_code}.json: {e}")
+                    print(f"[LanguageManager] ❌ Помилка при завантаженні {lang_code}.json: {e}")
             else:
-                print(f"[LanguageManager] ⚠️ Файл не найден: {path}")
+                print(f"[LanguageManager] ⚠️ Файл не знайдено: {path}")
 
     def get_text(self, key: str, lang: str) -> str:
         if lang not in self.languages:
             lang = self.default_language
         text = self.languages.get(lang, {}).get(key)
         if text is None:
-            print(f"[LanguageManager] ⚠️ Ключ '{key}' не найден для языка '{lang}'")
+            print(f"[LanguageManager] ⚠️ Ключ «{key}» не знайдено для мови «{lang}»")
             return f"[{key}]"
         return text
+
