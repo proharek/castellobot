@@ -19,11 +19,14 @@ class Config:
     PORT = 8080
 
     # Настройки отчёта за дни
-    DEFAULT_REPORT_DAYS = 7
+    DEFAULT_REPORT_DAYS = 1    # Минимум 1 день для отчётов
     MAX_REPORT_DAYS = 30
 
-    # Очистка старых отчётов по команде /cleanreports
+    # Очистка старых отчётов по команде /cleanreports (дефолт 7 дней)
     REPORT_CLEANUP_DAYS = 7
 
     # Путь к JSON-файлу с системными контрактами
     CONTRACTS_JSON_PATH = "contracts.json"
+
+    # Минимальный интервал между обновлениями контрактов в минутах (опционально)
+    CONTRACTS_RELOAD_COOLDOWN_MINUTES = 10
