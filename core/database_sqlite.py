@@ -102,8 +102,32 @@ class DatabaseManager:
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
         cutoff_iso = cutoff_date.isoformat()
         with self.conn:
-            cursor = self.conn.execute("DELETE FROM reports WHERE timestamp < ?", (cutoff_iso,))
-            return cursor.rowcount
+            # Сначала считаем сколько удалим
+            cursor = self.conn.execute("SELECT COUNT(*) FROM reports WHERE timestamp < ?", (cutoff_iso,))
+            count = cursor.fetchone()[0]
+            self.conn.execute("DELETE FROM reports WHERE timestamp < ?", (cutoff_iso,))
+            return count
+
+    def delete_reports_by_date(self, date_str: str) -> int:
+        """
+        Удаляет отчёты за конкретный день.
+        date_str должен быть в формате YYYY-MM-DD
+        """
+        start_dt = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        end_dt = start_dt + timedelta(days=1)
+        start_iso = start_dt.isoformat()
+        end_iso = end_dt.isoformat()
+        with self.conn:
+            cursor = self.conn.execute(
+                "SELECT COUNT(*) FROM reports WHERE timestamp >= ? AND timestamp < ?",
+                (start_iso, end_iso)
+            )
+            count = cursor.fetchone()[0]
+            self.conn.execute(
+                "DELETE FROM reports WHERE timestamp >= ? AND timestamp < ?",
+                (start_iso, end_iso)
+            )
+            return count
 
     def set_user_language(self, user_id: int, language: str) -> None:
         with self.conn:
