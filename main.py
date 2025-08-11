@@ -26,7 +26,7 @@ db = DatabaseManager()
 lang_manager = LanguageManager()
 
 # Загрузка контрактов из JSON
-CONTRACTS_JSON = "contracts.json"
+CONTRACTS_JSON = Config.CONTRACTS_JSON_PATH
 if os.path.exists(CONTRACTS_JSON):
     db.load_contracts_from_file(CONTRACTS_JSON)
 
@@ -83,7 +83,6 @@ class AddParticipantsButton(discord.ui.Button):
             author_id = interaction.user.id
             author_name = interaction.user.display_name
 
-            # Участники без "@"
             participant_names = [u.display_name for u in mentions]
             participants_text = "\n".join(f"• {name}" for name in participant_names)
 
@@ -226,7 +225,44 @@ async def clean_reports(interaction: discord.Interaction, days: int = Config.REP
         return
 
     count = db.delete_reports_older_than(days)
-    await interaction.response.send_message(f"🧹 Удалено {count} отчётов старше {days} дней.", ephemeral=True)
+    await interaction.response.send_message(
+        lang_manager.get_text("cleanreports_deleted", lang).format(count=count, date=f"{days} дн."),
+        ephemeral=True
+    )
+
+# --- Команда /cleanreportsday ---
+@bot.tree.command(name="cleanreportsday", description="🧹 Удалить отчёты за конкретный день (формат YYYY-MM-DD, только админ)")
+@app_commands.describe(date="Дата в формате YYYY-MM-DD")
+async def clean_reports_day(interaction: discord.Interaction, date: str):
+    lang = db.get_user_language(interaction.user.id)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
+        return
+
+    try:
+        datetime.strptime(date, "%Y-%m-%d")
+    except ValueError:
+        await interaction.response.send_message(lang_manager.get_text("invalid_date_format", lang), ephemeral=True)
+        return
+
+    count = db.delete_reports_by_date(date)
+    await interaction.response.send_message(
+        lang_manager.get_text("cleanreportsday_deleted", lang).format(count=count, date=date),
+        ephemeral=True
+    )
+
+# --- Команда /reload_contracts ---
+@bot.tree.command(name="reload_contracts", description="🔄 Перезагрузить контракты из файла (только админ)")
+async def reload_contracts(interaction: discord.Interaction):
+    lang = db.get_user_language(interaction.user.id)
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(lang_manager.get_text("no_permission", lang), ephemeral=True)
+        return
+    try:
+        db.load_contracts_from_file(Config.CONTRACTS_JSON_PATH)
+        await interaction.response.send_message(lang_manager.get_text("contracts_reloaded", lang), ephemeral=True)
+    except Exception as e:
+        await interaction.response.send_message(f"❌ Ошибка при загрузке контрактов: {e}", ephemeral=True)
 
 # --- Команда /language ---
 @bot.tree.command(name="language", description="🌐 Сменить язык")
@@ -256,6 +292,8 @@ async def info(interaction: discord.Interaction):
         "/report — Показать отчёт по контракту\n"
         "/reportdays — Сводка за последние дни (только админ)\n"
         "/cleanreports — Удалить старые отчёты (только админ)\n"
+        "/cleanreportsday — Удалить отчёты за конкретный день (только админ)\n"
+        "/reload_contracts — Перезагрузить контракты из файла (только админ)\n"
         "/info — Информация о командах\n\n"
         "В отчёте есть кнопка ➕ Добавить участников.\n"
         "После добавления отчёт сохраняется в базу."
